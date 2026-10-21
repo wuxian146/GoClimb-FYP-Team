@@ -10,3 +10,5 @@ staticfiles/
 db.sqlite3
 *.sqlite3-journal
 *.log
+goclimb_data/
+unity_export/

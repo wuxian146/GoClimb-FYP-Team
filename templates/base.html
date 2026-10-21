@@ -82,6 +82,7 @@
             <a href="/search/" {% if '/search' in request.path %}class="active"{% endif %}><i class="fas fa-search"></i> Search</a>
             <a href="/map/" {% if '/map' in request.path %}class="active"{% endif %}><i class="fas fa-map"></i> Map</a>
             <a href="/forum/" {% if '/forum' in request.path %}class="active"{% endif %}><i class="fas fa-comments"></i> Community</a>
+            <a href="/ar/scan/" {% if '/ar/' in request.path %}class="active"{% endif %}><i class="fas fa-camera"></i> Wall Scan</a>
             {% if request.user.is_authenticated %}
                 <a href="/favorites/" {% if '/favorites' in request.path %}class="active"{% endif %}><i class="fas fa-heart"></i> Favorites</a>
                 <a href="/dashboard/" {% if '/dashboard' in request.path %}class="active"{% endif %}><i class="fas fa-tachometer-alt"></i> Dashboard</a>

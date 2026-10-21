@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: free
     buildCommand: "bash build.sh"
-    startCommand: "python manage.py migrate --noinput && gunicorn config.wsgi:application"
+    startCommand: "python manage.py migrate --noinput && gunicorn config.wsgi:application --workers 1 --threads 4 --timeout 120"
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.8

@@ -60,6 +60,7 @@ INSTALLED_APPS = [
 
     'climbing.apps.ClimbingConfig',
     'rest_framework',
+    'wallscan',          # GoClimbAR wall scanning (web + Unity API under /ar/)
 ]
 
 MIDDLEWARE = [
@@ -160,6 +161,15 @@ if not DEBUG:
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# ---- GoClimbAR (wallscan app) ----
+# Where scanned wall photos + the route engine's own SQLite live.
+GOCLIMB_AR_DATA = Path(os.environ.get('GOCLIMB_AR_DATA', BASE_DIR / 'goclimb_data'))
+GOCLIMB_AR_UNITY_EXPORT = Path(os.environ.get('GOCLIMB_AR_UNITY_EXPORT', BASE_DIR / 'unity_export'))
+# Password for editing SAVED walls in the /ar/ editor. Empty + DEBUG=True = open (local only).
+GOCLIMB_AR_ADMIN_TOKEN = os.environ.get('GOCLIMB_ADMIN_TOKEN', '')
+# Wall photos are sent as base64 JSON, larger than Django's 2.5 MB default.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 40 * 1024 * 1024
 
 # Django REST Framework configuration
 REST_FRAMEWORK = {

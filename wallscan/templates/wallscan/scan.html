@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .ws-wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  .ws-card { background: #fff; border-radius: 14px; box-shadow: 0 4px 18px rgba(0,0,0,.08); padding: 18px; margin-bottom: 16px; color: #1e293b; }
+  .ws-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .ws-row label { font-size: 14px; }
+  .ws-btn { border: 0; border-radius: 10px; padding: 11px 16px; font-size: 15px; cursor: pointer; background: #2563eb; color: #fff; }
+  .ws-btn.ghost { background: #e2e8f0; color: #1e293b; }
+  .ws-btn.green { background: #16a34a; }
+  .ws-btn:disabled { opacity: .5; cursor: default; }
+  .ws-stage { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; }
+  @media (max-width: 800px) { .ws-stage { grid-template-columns: 1fr; } }
+  #ws-canvas { width: 100%; height: auto; border-radius: 10px; background: #0f172a; display: block; touch-action: manipulation; }
+  .ws-route { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 8px; cursor: pointer; }
+  .ws-route:hover { background: #f1f5f9; }
+  .ws-route.off { opacity: .4; }
+  .ws-dot { width: 14px; height: 14px; border-radius: 50%; flex: none; }
+  .ws-status { font-size: 14px; color: #475569; margin-top: 8px; min-height: 20px; }
+  .ws-note { font-size: 12px; color: #64748b; margin-top: 10px; }
+  .ws-walls { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+  .ws-wall { border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; cursor: pointer; background: #f8fafc; }
+  .ws-wall img { width: 100%; height: 110px; object-fit: cover; display: block; }
+  .ws-wall div { padding: 6px 8px; font-size: 13px; }
+  input[type=text], select { padding: 9px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; }
+  #ws-file { display: none; }
+</style>
+
+<div class="ws-wrap">
+  <div class="ws-card">
+    <h2 style="margin:0 0 6px"><i class="fas fa-camera"></i> Wall Scan</h2>
+    <p style="margin:0 0 12px;color:#64748b">Take a photo of a climbing wall (or upload one). GoClimb finds the holds and suggests routes.</p>
+    <div class="ws-row">
+      <select id="ws-mode"><option value="indoor">Indoor wall</option><option value="outdoor">Outdoor crag</option></select>
+      <label>Routes <select id="ws-max"><option>3</option><option selected>6</option><option>10</option></select></label>
+      <button class="ws-btn" id="ws-take"><i class="fas fa-camera"></i> Take / upload photo</button>
+      <input type="file" id="ws-file" accept="image/*" capture="environment">
+    </div>
+    <div class="ws-status" id="ws-status"></div>
+  </div>
+
+  <div class="ws-card" id="ws-result" style="display:none">
+    <div class="ws-stage">
+      <canvas id="ws-canvas"></canvas>
+      <div>
+        <h3 style="margin:0 0 8px" id="ws-title">Routes</h3>
+        <div id="ws-routes"></div>
+        <div id="ws-save-box" style="margin-top:14px">
+          <input type="text" id="ws-name" placeholder="Wall name" style="width:100%;margin-bottom:8px">
+          <input type="text" id="ws-venue" placeholder="Gym / crag" style="width:100%;margin-bottom:8px">
+          <div class="ws-row">
+            <button class="ws-btn green" id="ws-save">Save wall</button>
+            <button class="ws-btn ghost" id="ws-regen">New routes</button>
+            <button class="ws-btn ghost" id="ws-discard">Discard</button>
+          </div>
+        </div>
+        <div class="ws-note" id="ws-disclaimer"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ws-card">
+    <div class="ws-row" style="justify-content:space-between;margin-bottom:10px">
+      <h3 style="margin:0">Saved walls</h3>
+      <input type="text" id="ws-search" placeholder="Search walls">
+    </div>
+    <div class="ws-walls" id="ws-walls"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const API = "/ar";
+  const $ = (id) => document.getElementById(id);
+  const canvas = $("ws-canvas"), ctx = canvas.getContext("2d");
+  let img = null, doc = null, scanId = null, hidden = new Set();
+
+  function status(t) { $("ws-status").textContent = t || ""; }
+
+  async function call(method, path, body) {
+    const r = await fetch(API + path, {
+      method, headers: body ? { "Content-Type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw Object.assign(new Error(data.error || ("HTTP " + r.status)), { status: r.status, data });
+    return data;
+  }
+
+  // Shrink big phone photos before upload (faster on mobile data, same result for detection).
+  function loadAndResize(file, maxSide) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const im = new Image();
+      im.onload = () => {
+        const s = Math.min(1, maxSide / Math.max(im.width, im.height));
+        const c = document.createElement("canvas");
+        c.width = Math.round(im.width * s); c.height = Math.round(im.height * s);
+        c.getContext("2d").drawImage(im, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        const dataUrl = c.toDataURL("image/jpeg", 0.88);
+        const out = new Image();
+        out.onload = () => resolve({ image: out, b64: dataUrl.split(",")[1] });
+        out.src = dataUrl;
+      };
+      im.onerror = () => reject(new Error("Could not read that image"));
+      im.src = url;
+    });
+  }
+
+  function draw() {
+    if (!img || !doc) return;
+    canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+    ctx.drawImage(img, 0, 0);
+    const W = canvas.width, H = canvas.height, r = Math.max(6, W / 90);
+    ctx.lineWidth = Math.max(2, W / 300);
+    for (const h of doc.holds || []) {                      // all detected holds, faint
+      ctx.beginPath(); ctx.arc(h.x * W, h.y * H, r * 0.6, 0, 7);
+      ctx.strokeStyle = "rgba(255,255,255,.55)"; ctx.stroke();
+    }
+    for (const rt of doc.routes || []) {
+      if (hidden.has(rt.id)) continue;
+      const pts = rt.points || [];
+      ctx.strokeStyle = rt.color; ctx.fillStyle = rt.color;
+      ctx.beginPath();
+      pts.forEach((p, i) => (i ? ctx.lineTo(p.x * W, p.y * H) : ctx.moveTo(p.x * W, p.y * H)));
+      ctx.globalAlpha = 0.7; ctx.stroke(); ctx.globalAlpha = 1;
+      pts.forEach((p, i) => {
+        ctx.beginPath(); ctx.arc(p.x * W, p.y * H, r, 0, 7); ctx.fill();
+        if (i === 0 || i === pts.length - 1) {
+          ctx.font = `bold ${Math.round(r * 1.6)}px sans-serif`;
+          ctx.fillStyle = "#fff"; ctx.fillText(i === 0 ? "S" : "T", p.x * W + r * 1.3, p.y * H + r * 0.5);
+          ctx.fillStyle = rt.color;
+        }
+      });
+    }
+  }
+
+  function showDoc(d, opts) {
+    doc = d; hidden = new Set();
+    $("ws-result").style.display = "";
+    $("ws-title").textContent = opts.title;
+    $("ws-save-box").style.display = opts.canSave ? "" : "none";
+    $("ws-disclaimer").textContent = (d.disclaimer || "") + " " + (d.warnings || []).join(" ");
+    const box = $("ws-routes"); box.innerHTML = "";
+    (d.routes || []).forEach((rt) => {
+      const row = document.createElement("div");
+      row.className = "ws-route";
+      row.innerHTML = `<span class="ws-dot" style="background:${rt.color}"></span>
+        <span>${rt.id} · ${rt.difficulty} · ${(rt.points || []).length} holds</span>`;
+      row.onclick = () => { hidden.has(rt.id) ? hidden.delete(rt.id) : hidden.add(rt.id); row.classList.toggle("off"); draw(); };
+      box.appendChild(row);
+    });
+    if (!(d.routes || []).length) box.textContent = "No routes found. Try a sharper, straight-on photo.";
+    draw();
+    $("ws-result").scrollIntoView({ behavior: "smooth" });
+  }
+
+  $("ws-take").onclick = () => $("ws-file").click();
+  $("ws-file").onchange = async (e) => {
+    const f = e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    $("ws-take").disabled = true;
+    try {
+      status("Preparing photo…");
+      const { image, b64 } = await loadAndResize(f, 1600);
+      img = image;
+      status("Finding holds and routes…");
+      const res = await call("POST", "/api/scan", { image_b64: b64, mode: $("ws-mode").value, max_routes: +$("ws-max").value });
+      scanId = res.scan_id;
+      const known = res.status === "known";
+      status(known ? "Recognised a saved wall." : `Found ${res.holds_detected} holds (preview, not saved).`);
+      showDoc(res.doc, { title: known ? (res.doc.name || "Saved wall") : "New wall (preview)", canSave: !known });
+    } catch (err) {
+      status(navigator.onLine ? "Scan failed: " + err.message : "You're offline. Scanning a new wall needs internet.");
+    } finally { $("ws-take").disabled = false; }
+  };
+
+  $("ws-save").onclick = async () => {
+    try {
+      const res = await call("POST", `/api/scans/${scanId}/save`, { name: $("ws-name").value, venue: $("ws-venue").value });
+      status(res.created ? "Saved!" : "This wall was already saved.");
+      $("ws-save-box").style.display = "none";
+      loadWalls();
+    } catch (err) {
+      status(err.status === 409 ? "This wall looks like one that is already saved." : "Save failed: " + err.message);
+    }
+  };
+  $("ws-regen").onclick = async () => {
+    try { const res = await call("POST", `/api/scans/${scanId}/regenerate`, { max_routes: +$("ws-max").value });
+          showDoc(res.doc, { title: $("ws-title").textContent, canSave: true }); }
+    catch (err) { status(err.message); }
+  };
+  $("ws-discard").onclick = async () => {
+    if (scanId) await call("DELETE", `/api/scans/${scanId}`).catch(() => {});
+    scanId = null; $("ws-result").style.display = "none"; status("Discarded.");
+  };
+
+  async function openWall(w) {
+    try {
+      status("Loading wall…");
+      const d = await call("GET", `/api/walls/${w.wall_id}/unity`);
+      const im = new Image();
+      im.onload = () => { img = im; showDoc(d, { title: `${w.name} · ${w.venue}`, canSave: false }); status(""); };
+      im.src = `${API}/photo/${w.wall_id}`;
+    } catch (err) { status(err.message); }
+  }
+
+  async function loadWalls() {
+    const q = $("ws-search").value.trim();
+    try {
+      const walls = await call("GET", "/api/walls" + (q ? "?q=" + encodeURIComponent(q) : ""));
+      const box = $("ws-walls"); box.innerHTML = "";
+      walls.forEach((w) => {
+        const el = document.createElement("div"); el.className = "ws-wall";
+        el.innerHTML = `<img loading="lazy" src="${API}/photo/${w.wall_id}" alt=""><div><b></b><br><span></span></div>`;
+        el.querySelector("b").textContent = w.name; el.querySelector("span").textContent = `${w.venue} · ${w.mode}`;
+        el.onclick = () => openWall(w);
+        box.appendChild(el);
+      });
+      if (!walls.length) box.textContent = "No saved walls yet.";
+    } catch (err) { $("ws-walls").textContent = "Could not load walls."; }
+  }
+  let t; $("ws-search").oninput = () => { clearTimeout(t); t = setTimeout(loadWalls, 300); };
+  loadWalls();
+})();
+</script>
+{% endblock %}
