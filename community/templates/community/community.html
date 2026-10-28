@@ -1,0 +1,457 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  .cm-wrap { width: 100%; max-width: 860px; margin: 0 auto; align-self: flex-start; padding-bottom: 60px; }
+  .cm-card { background: #fff; color: #1e293b; border-radius: 16px; padding: 16px; margin-bottom: 14px; box-shadow: 0 4px 18px rgba(0,0,0,.10); }
+  .cm-card h2, .cm-card h3 { margin: 0 0 10px; color: #0f172a; }
+  .cm-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: rgba(255,255,255,.12); padding: 6px; border-radius: 14px; margin-bottom: 14px; position: sticky; top: 64px; z-index: 5; backdrop-filter: blur(8px); }
+  .cm-tab { border: 0; border-radius: 10px; padding: 11px 6px; font-size: 15px; font-weight: 600; cursor: pointer; background: transparent; color: #fff; }
+  .cm-tab.on { background: #fff; color: #0f172a; }
+  .cm-count { display: inline-block; min-width: 20px; padding: 1px 6px; border-radius: 999px; background: #ef4444; color: #fff; font-size: 12px; margin-left: 4px; }
+  .cm-in { width: 100%; padding: 11px; border: 1px solid #cbd5e1; border-radius: 12px; font-size: 15px; background: #fff; font-family: inherit; }
+  textarea.cm-in { min-height: 90px; resize: vertical; }
+  .cm-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .cm-btn { border: 0; border-radius: 12px; padding: 10px 14px; font-size: 14px; font-weight: 500; cursor: pointer; background: #2563eb; color: #fff;
+            display: inline-flex; gap: 6px; align-items: center; justify-content: center; text-decoration: none; min-height: 42px; }
+  .cm-btn.ghost { background: #e2e8f0; color: #1e293b; } .cm-btn.green { background: #16a34a; } .cm-btn.red { background: #dc2626; }
+  .cm-btn.sm { min-height: 34px; padding: 6px 10px; font-size: 13px; }
+  .cm-btn:disabled { opacity: .5; cursor: default; }
+  .cm-seg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 10px 0; }
+  .cm-seg button { border: 1px solid #cbd5e1; background: #fff; border-radius: 10px; padding: 9px 4px; font-size: 13px; cursor: pointer; color: #334155; }
+  .cm-seg button.on { background: #0f172a; color: #fff; border-color: #0f172a; }
+  #cm-map { height: 240px; border-radius: 12px; margin-top: 8px; z-index: 0; }
+  .cm-post .head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+  .cm-post .who { font-size: 13px; color: #64748b; }
+  .cm-post h3 { margin: 6px 0; }
+  .cm-post p { white-space: pre-wrap; line-height: 1.55; margin: 6px 0 10px; }
+  .cm-place { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: #f1f5f9; padding: 9px 11px; border-radius: 12px; font-size: 14px; margin-bottom: 10px; }
+  .cm-place a { color: #2563eb; text-decoration: none; }
+  .cm-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .02em; }
+  .cm-badge.verified { background: #dbeafe; color: #1e40af; } .cm-badge.pending { background: #fef3c7; color: #92400e; }
+  .cm-badge.approved { background: #dcfce7; color: #166534; } .cm-badge.rejected { background: #fee2e2; color: #991b1b; }
+  .cm-badge.going { background: #dcfce7; color: #166534; } .cm-badge.invited { background: #fef3c7; color: #92400e; }
+  .cm-badge.declined, .cm-badge.cancelled { background: #e2e8f0; color: #475569; } .cm-badge.organizer { background: #e0e7ff; color: #3730a3; }
+  .cm-actions { display: flex; gap: 8px; flex-wrap: wrap; border-top: 1px solid #e2e8f0; padding-top: 10px; }
+  .cm-comments { margin-top: 10px; display: none; }
+  .cm-comment { background: #f8fafc; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; font-size: 14px; }
+  .cm-person { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid #f1f5f9; flex-wrap: wrap; }
+  .cm-plan { border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px; margin-bottom: 10px; }
+  .cm-plan.cancelled { opacity: .55; }
+  .cm-when { font-weight: 700; color: #0f172a; }
+  .cm-muted { color: #64748b; font-size: 13px; }
+  .cm-msg { font-size: 14px; min-height: 18px; margin-top: 8px; color: #334155; }
+  .cm-modal { position: fixed; inset: 0; background: rgba(15,23,42,.65); z-index: 3000; display: none; align-items: center; justify-content: center; padding: 14px; }
+  .cm-modal .box { width: 100%; max-width: 480px; max-height: 92vh; overflow: auto; background: #fff; color: #1e293b; border-radius: 18px; padding: 18px; }
+  .cm-modal label { display: block; font-size: 13px; color: #475569; margin: 10px 0 4px; }
+  .cm-check { display: flex; gap: 8px; align-items: center; padding: 6px 0; font-size: 15px; }
+  @media (max-width: 560px) {
+    .cm-card { padding: 13px; }
+    .cm-seg { grid-template-columns: 1fr 1fr; }
+    .cm-tabs { top: 58px; }
+  }
+</style>
+
+<div class="cm-wrap">
+  <div class="cm-tabs">
+    <button class="cm-tab on" data-tab="feed"><i class="fas fa-stream"></i> Feed</button>
+    <button class="cm-tab" data-tab="friends"><i class="fas fa-user-friends"></i> Friends<span id="cm-n-friends"></span></button>
+    <button class="cm-tab" data-tab="plans"><i class="fas fa-calendar-alt"></i> Plans<span id="cm-n-plans"></span></button>
+  </div>
+
+  <!-- ============================== FEED -->
+  <section id="tab-feed">
+    {% if request.user.is_authenticated %}
+    <div class="cm-card">
+      <h3>Share a climb</h3>
+      <input class="cm-in" id="cm-title" maxlength="160" placeholder="Title, e.g. Sunday session at Dairy Farm" style="margin-bottom:8px">
+      <textarea class="cm-in" id="cm-content" placeholder="How was it? Conditions, beta, who wants to come next time…"></textarea>
+      <div class="cm-muted" style="margin-top:10px"><i class="fas fa-map-marker-alt"></i> Where did you climb?</div>
+      <div class="cm-seg" id="cm-kind">
+        <button data-kind="" class="on">No place</button>
+        <button data-kind="crag">Known place</button>
+        <button data-kind="wall">Scanned wall</button>
+        <button data-kind="new">New place</button>
+      </div>
+      <div id="pk-crag" style="display:none">
+        <select class="cm-in" id="cm-crag"><option value="">Choose a location…</option></select>
+      </div>
+      <div id="pk-wall" style="display:none">
+        <select class="cm-in" id="cm-wall"><option value="">Choose a wall you scanned or an approved wall…</option></select>
+        <div class="cm-muted" style="margin-top:6px">Walls still waiting for review show their status on your post.</div>
+      </div>
+      <div id="pk-new" style="display:none">
+        <input class="cm-in" id="cm-newname" maxlength="120" placeholder="Name of the place (e.g. Hidden boulder, Pulau Ubin)">
+        <div class="cm-row" style="margin-top:8px">
+          <button type="button" class="cm-btn ghost sm" id="cm-here"><i class="fas fa-location-arrow"></i> Use my location</button>
+          <span class="cm-muted" id="cm-pos">Tap the map to mark the spot (optional).</span>
+        </div>
+        <div id="cm-map"></div>
+        <div class="cm-muted" style="margin-top:6px"><i class="fas fa-info-circle"></i> New places are checked by an admin. Your post shows "Pending admin review" until then.</div>
+      </div>
+      <div class="cm-row" style="margin-top:12px;justify-content:flex-end">
+        <button class="cm-btn" id="cm-post"><i class="fas fa-paper-plane"></i> Post</button>
+      </div>
+      <div class="cm-msg" id="cm-post-msg"></div>
+    </div>
+    {% else %}
+    <div class="cm-card"><a class="cm-btn" href="/login/?next=/community/"><i class="fas fa-sign-in-alt"></i> Log in to post, add friends and plan climbs</a></div>
+    {% endif %}
+
+    <div class="cm-row" style="margin-bottom:10px">
+      <button class="cm-btn sm" id="cm-all">Everyone</button>
+      {% if request.user.is_authenticated %}<button class="cm-btn ghost sm" id="cm-fr">Friends only</button>{% endif %}
+    </div>
+    <div id="cm-feed"><div class="cm-card cm-muted">Loading…</div></div>
+  </section>
+
+  <!-- ============================== FRIENDS -->
+  <section id="tab-friends" style="display:none">
+    <div class="cm-card">
+      <h3>Add a friend</h3>
+      <div class="cm-row">
+        <input class="cm-in" id="cm-friend-name" placeholder="Username" style="flex:1;min-width:160px">
+        <button class="cm-btn" id="cm-friend-add"><i class="fas fa-user-plus"></i> Add</button>
+      </div>
+      <div class="cm-msg" id="cm-friend-msg"></div>
+      <div class="cm-muted">Or tap <b>Add friend</b> on anyone's post in the feed.</div>
+    </div>
+    <div class="cm-card" id="cm-incoming-card" style="display:none"><h3>Friend requests</h3><div id="cm-incoming"></div></div>
+    <div class="cm-card"><h3>Your friends</h3><div id="cm-friends"><div class="cm-muted">Loading…</div></div></div>
+    <div class="cm-card" id="cm-outgoing-card" style="display:none"><h3>Waiting for them</h3><div id="cm-outgoing"></div></div>
+  </section>
+
+  <!-- ============================== PLANS -->
+  <section id="tab-plans" style="display:none">
+    <div class="cm-card cm-row" style="justify-content:space-between">
+      <h3 style="margin:0">Upcoming climbs</h3>
+      <button class="cm-btn" id="cm-book"><i class="fas fa-plus"></i> Book a climb</button>
+    </div>
+    <div id="cm-plans"><div class="cm-card cm-muted">Loading…</div></div>
+  </section>
+</div>
+
+<!-- ============================== Book-a-climb dialog -->
+<div class="cm-modal" id="cm-modal">
+  <div class="box">
+    <div class="cm-row" style="justify-content:space-between"><h3 style="margin:0">Book a climb together</h3>
+      <button class="cm-btn ghost sm" id="cm-close"><i class="fas fa-times"></i></button></div>
+    <label for="mt-title">What</label>
+    <input class="cm-in" id="mt-title" maxlength="120" value="Climbing session">
+    <label for="mt-start">When</label>
+    <input class="cm-in" id="mt-start" type="datetime-local">
+    <label for="mt-dur">How long</label>
+    <select class="cm-in" id="mt-dur">
+      <option value="60">1 hour</option><option value="120" selected>2 hours</option>
+      <option value="180">3 hours</option><option value="240">Half day</option><option value="480">Full day</option>
+    </select>
+    <label for="mt-crag">Where</label>
+    <select class="cm-in" id="mt-crag"><option value="">Other place (type below)</option></select>
+    <input class="cm-in" id="mt-place" maxlength="120" placeholder="Place name" style="margin-top:8px">
+    <label>Invite friends</label>
+    <div id="mt-friends" class="cm-muted">Add friends first (Friends tab).</div>
+    <label for="mt-note">Note</label>
+    <textarea class="cm-in" id="mt-note" placeholder="Meeting point, gear to bring…" style="min-height:60px"></textarea>
+    <div class="cm-row" style="margin-top:14px;justify-content:flex-end">
+      <button class="cm-btn green" id="mt-save"><i class="fas fa-calendar-check"></i> Book &amp; invite</button>
+    </div>
+    <div class="cm-msg" id="mt-msg"></div>
+  </div>
+</div>
+
+{{ crags|json_script:"cm-crags" }}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function () {
+  const LOGGED_IN = {{ request.user.is_authenticated|yesno:"true,false" }};
+  const CRAGS = JSON.parse(document.getElementById("cm-crags").textContent);
+  const $ = (id) => document.getElementById(id);
+  const esc = (t) => { const d = document.createElement("div"); d.textContent = t == null ? "" : String(t); return d.innerHTML; };
+  const csrf = () => { const m = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/); return m ? decodeURIComponent(m[1]) : ""; };
+  let friendsData = { friends: [], incoming: [], outgoing: [] }, feedFriendsOnly = false, newPos = null, map = null, marker = null;
+
+  async function call(method, url, body) {
+    const r = await fetch(url, { method, credentials: "same-origin",
+      headers: Object.assign({ "X-CSRFToken": csrf() }, body ? { "Content-Type": "application/json" } : {}),
+      body: body ? JSON.stringify(body) : undefined });
+    const data = await r.json().catch(() => ({}));
+    if (r.status === 401 && data.login_url) { location.href = data.login_url; throw new Error("Please log in"); }
+    if (!r.ok) throw new Error(data.error || data.detail || ("HTTP " + r.status));
+    return data;
+  }
+  const when = (iso) => new Date(iso).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const ago = (iso) => { const s = (Date.now() - new Date(iso)) / 1000;
+    return s < 60 ? "just now" : s < 3600 ? Math.floor(s / 60) + " min ago" : s < 86400 ? Math.floor(s / 3600) + " h ago" : new Date(iso).toLocaleDateString(); };
+
+  // ------------------------------------------------------------------ tabs
+  function showTab(name) {
+    document.querySelectorAll(".cm-tab").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
+    ["feed", "friends", "plans"].forEach((t) => $("tab-" + t).style.display = t === name ? "" : "none");
+    if (!LOGGED_IN && name !== "feed") { location.href = "/login/?next=/community/"; return; }
+    if (name === "friends") loadFriends();
+    if (name === "plans") loadPlans();
+    history.replaceState(null, "", "#" + name);
+  }
+  document.querySelectorAll(".cm-tab").forEach((b) => b.onclick = () => showTab(b.dataset.tab));
+
+  // ------------------------------------------------------------------ composer: place picker
+  CRAGS.forEach((c) => { $("mt-crag").insertAdjacentHTML("beforeend", `<option value="${c.id}">${esc(c.name)}</option>`);
+    if ($("cm-crag")) $("cm-crag").insertAdjacentHTML("beforeend", `<option value="${c.id}">${esc(c.name)}</option>`); });
+  let kind = "";
+  if (LOGGED_IN && $("cm-kind")) {
+    $("cm-kind").querySelectorAll("button").forEach((b) => b.onclick = () => {
+      kind = b.dataset.kind;
+      $("cm-kind").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+      ["crag", "wall", "new"].forEach((k) => $("pk-" + k).style.display = k === kind ? "" : "none");
+      if (kind === "wall") loadWalls();
+      if (kind === "new") initMap();
+    });
+    $("cm-here").onclick = () => navigator.geolocation && navigator.geolocation.getCurrentPosition(
+      (p) => { setPos(p.coords.latitude, p.coords.longitude); map.setView([p.coords.latitude, p.coords.longitude], 15); },
+      () => { $("cm-pos").textContent = "Couldn't get your location (needs https or localhost). Tap the map instead."; });
+    $("cm-post").onclick = submitPost;
+  }
+  let wallsLoaded = false;
+  async function loadWalls() {
+    if (wallsLoaded) return;
+    try {
+      const d = await call("GET", "/api/community/place-options/");
+      d.walls.forEach((w) => $("cm-wall").insertAdjacentHTML("beforeend",
+        `<option value="${esc(w.wall_id)}">${esc(w.name)}${w.venue ? " · " + esc(w.venue) : ""} (${esc(w.status_label)})</option>`));
+      wallsLoaded = true;
+    } catch (e) { $("cm-post-msg").textContent = e.message; }
+  }
+  function initMap() {
+    if (map) { setTimeout(() => map.invalidateSize(), 50); return; }
+    map = L.map("cm-map").setView([1.3521, 103.8198], 11);
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+      { maxZoom: 19, attribution: "Tiles &copy; Esri" }).addTo(map);
+    CRAGS.forEach((c) => L.circleMarker([c.lat, c.lng], { radius: 5, color: "#64748b" }).addTo(map).bindTooltip(c.name));
+    map.on("click", (e) => setPos(e.latlng.lat, e.latlng.lng));
+  }
+  function setPos(lat, lng) {
+    newPos = { lat: +lat.toFixed(6), lng: +lng.toFixed(6) };
+    if (marker) marker.setLatLng([newPos.lat, newPos.lng]); else marker = L.marker([newPos.lat, newPos.lng]).addTo(map);
+    $("cm-pos").textContent = `Marked: ${newPos.lat}, ${newPos.lng}`;
+  }
+
+  async function submitPost() {
+    const body = { title: $("cm-title").value, content: $("cm-content").value, place: null };
+    if (kind === "crag") { if (!$("cm-crag").value) return ($("cm-post-msg").textContent = "Choose the location."); body.place = { kind, crag_id: +$("cm-crag").value }; }
+    if (kind === "wall") { if (!$("cm-wall").value) return ($("cm-post-msg").textContent = "Choose the wall."); body.place = { kind, wall_id: $("cm-wall").value }; }
+    if (kind === "new") body.place = { kind, name: $("cm-newname").value, lat: newPos ? newPos.lat : null, lng: newPos ? newPos.lng : null };
+    $("cm-post").disabled = true;
+    try {
+      const d = await call("POST", "/api/community/posts/", body);
+      $("cm-post-msg").textContent = d.message;
+      $("cm-title").value = ""; $("cm-content").value = ""; $("cm-newname").value = "";
+      loadFeed();
+    } catch (e) { $("cm-post-msg").textContent = e.message; }
+    finally { $("cm-post").disabled = false; }
+  }
+
+  // ------------------------------------------------------------------ feed
+  function placeHtml(p) {
+    if (!p) return "";
+    const maps = p.lat != null && p.lng != null ? ` · <a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${p.lat},${p.lng}">Open in Maps</a>` : "";
+    const name = p.crag ? `<a href="/crag/${encodeURIComponent(p.crag.slug)}/">${esc(p.name)}</a>` : esc(p.name);
+    const icon = p.kind === "wall" ? "fa-camera" : "fa-map-marker-alt";
+    const note = p.note && p.status !== "verified" ? `<div class="cm-muted" style="width:100%">Admin: ${esc(p.note)}</div>` : "";
+    return `<div class="cm-place"><i class="fas ${icon}"></i> <span>${name}${maps}</span>
+      <span class="cm-badge ${esc(p.status)}">${esc(p.status_label)}</span>${note}</div>`;
+  }
+  function relationHtml(post) {
+    if (!LOGGED_IN || post.relation === "me") return "";
+    const u = post.author;
+    if (post.relation === "friend") return `<button class="cm-btn green sm" data-plan-post="${post.id}"><i class="fas fa-calendar-plus"></i> Climb together</button>`;
+    if (post.relation === "sent") return `<button class="cm-btn ghost sm" disabled>Request sent</button>`;
+    if (post.relation === "received") return `<button class="cm-btn sm" data-addfriend="${u.id}"><i class="fas fa-check"></i> Accept friend</button>`;
+    return `<button class="cm-btn ghost sm" data-addfriend="${u.id}"><i class="fas fa-user-plus"></i> Add friend</button>`;
+  }
+  let posts = [];
+  async function loadFeed() {
+    try {
+      const d = await call("GET", "/api/community/feed/" + (feedFriendsOnly ? "?friends=1" : ""));
+      posts = d.results;
+      $("cm-feed").innerHTML = posts.length ? posts.map((p) => `
+        <div class="cm-card cm-post" id="post-${p.id}">
+          <div class="head"><div><div class="who"><b>${esc(p.author.username)}</b> · ${ago(p.created_at)}</div><h3>${esc(p.title)}</h3></div>
+            <div>${relationHtml(p)}</div></div>
+          <p>${esc(p.content)}</p>
+          ${placeHtml(p.place)}
+          <div class="cm-actions">
+            <button class="cm-btn ghost sm" data-like="${p.id}"><i class="${p.is_liked ? "fas" : "far"} fa-heart"></i> <span>${p.like_count}</span></button>
+            <button class="cm-btn ghost sm" data-comments="${p.id}"><i class="far fa-comment"></i> ${p.comment_count}</button>
+          </div>
+          <div class="cm-comments" id="cmts-${p.id}"></div>
+        </div>`).join("") : `<div class="cm-card cm-muted">No posts yet${feedFriendsOnly ? " from your friends" : ""}.</div>`;
+    } catch (e) { $("cm-feed").innerHTML = `<div class="cm-card cm-muted">${esc(e.message)}</div>`; }
+  }
+  $("cm-feed").addEventListener("click", async (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    try {
+      if (b.dataset.addfriend) { const d = await call("POST", "/api/community/friends/request/", { user_id: +b.dataset.addfriend }); alertMsg(d.message); loadFeed(); refreshCounts(); }
+      else if (b.dataset.planPost) { const p = posts.find((x) => x.id === +b.dataset.planPost); openPlan({ post: p }); }
+      else if (b.dataset.like) {
+        if (!LOGGED_IN) return (location.href = "/login/?next=/community/");
+        const d = await call("POST", `/api/forum/posts/${b.dataset.like}/like/`);
+        b.innerHTML = `<i class="${d.is_liked ? "fas" : "far"} fa-heart"></i> <span>${d.like_count}</span>`;
+      } else if (b.dataset.comments) toggleComments(+b.dataset.comments);
+      else if (b.dataset.sendComment) sendComment(+b.dataset.sendComment);
+    } catch (err) { alertMsg(err.message); }
+  });
+  async function toggleComments(id) {
+    const box = $("cmts-" + id);
+    if (box.style.display === "block") { box.style.display = "none"; return; }
+    box.style.display = "block"; box.innerHTML = '<div class="cm-muted">Loading…</div>';
+    const d = await call("GET", `/api/forum/posts/${id}/comments/`);
+    box.innerHTML = d.results.map((c) => `<div class="cm-comment"><b>${esc(c.author && c.author.username || c.author)}</b> ${esc(c.content)}</div>`).join("") +
+      (LOGGED_IN ? `<div class="cm-row"><input class="cm-in" id="cin-${id}" placeholder="Write a reply" style="flex:1">
+       <button class="cm-btn sm" data-send-comment="${id}">Reply</button></div>` : "");
+  }
+  async function sendComment(id) {
+    const input = $("cin-" + id); if (!input.value.trim()) return;
+    await call("POST", `/api/forum/posts/${id}/comments/`, { content: input.value.trim() });
+    $("cmts-" + id).style.display = "none"; toggleComments(id); loadFeed();
+  }
+  $("cm-all").onclick = () => { feedFriendsOnly = false; $("cm-all").className = "cm-btn sm"; if ($("cm-fr")) $("cm-fr").className = "cm-btn ghost sm"; loadFeed(); };
+  if ($("cm-fr")) $("cm-fr").onclick = () => { feedFriendsOnly = true; $("cm-fr").className = "cm-btn sm"; $("cm-all").className = "cm-btn ghost sm"; loadFeed(); };
+  function alertMsg(t) { const m = $("cm-post-msg") || $("cm-friend-msg"); if (m) m.textContent = t; else alert(t); }
+
+  // ------------------------------------------------------------------ friends
+  async function loadFriends() {
+    try {
+      friendsData = await call("GET", "/api/community/friends/");
+      const f = friendsData;
+      $("cm-incoming-card").style.display = f.incoming.length ? "" : "none";
+      $("cm-incoming").innerHTML = f.incoming.map((x) => `<div class="cm-person"><b>${esc(x.username)}</b>
+        <div class="cm-row"><button class="cm-btn green sm" data-accept="${x.request_id}">Accept</button>
+        <button class="cm-btn ghost sm" data-decline="${x.request_id}">Decline</button></div></div>`).join("");
+      $("cm-friends").innerHTML = f.friends.length ? f.friends.map((x) => `<div class="cm-person"><b>${esc(x.username)}</b>
+        <div class="cm-row"><button class="cm-btn sm" data-plan-user="${x.user_id}"><i class="fas fa-calendar-plus"></i> Plan a climb</button>
+        <button class="cm-btn ghost sm" data-remove="${x.user_id}" title="Remove friend"><i class="fas fa-user-minus"></i></button></div></div>`).join("")
+        : '<div class="cm-muted">No friends yet.</div>';
+      $("cm-outgoing-card").style.display = f.outgoing.length ? "" : "none";
+      $("cm-outgoing").innerHTML = f.outgoing.map((x) => `<div class="cm-person"><b>${esc(x.username)}</b><span class="cm-muted">request sent</span></div>`).join("");
+      setCount("cm-n-friends", f.incoming.length);
+    } catch (e) { $("cm-friends").innerHTML = `<div class="cm-muted">${esc(e.message)}</div>`; }
+  }
+  $("tab-friends").addEventListener("click", async (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    try {
+      if (b.dataset.accept) await call("POST", `/api/community/friends/${b.dataset.accept}/respond/`, { accept: true });
+      else if (b.dataset.decline) await call("POST", `/api/community/friends/${b.dataset.decline}/respond/`, { accept: false });
+      else if (b.dataset.remove) { if (!confirm("Remove this friend?")) return; await call("POST", `/api/community/friends/${b.dataset.remove}/remove/`, {}); }
+      else if (b.dataset.planUser) { openPlan({ userId: +b.dataset.planUser }); return; }
+      else return;
+      loadFriends();
+    } catch (err) { $("cm-friend-msg").textContent = err.message; }
+  });
+  $("cm-friend-add").onclick = async () => {
+    try { const d = await call("POST", "/api/community/friends/request/", { username: $("cm-friend-name").value });
+          $("cm-friend-msg").textContent = d.message; $("cm-friend-name").value = ""; loadFriends(); }
+    catch (e) { $("cm-friend-msg").textContent = e.message; }
+  };
+
+  // ------------------------------------------------------------------ plans
+  async function loadPlans() {
+    try {
+      const d = await call("GET", "/api/community/meetups/");
+      $("cm-plans").innerHTML = d.results.length ? d.results.map((m) => {
+        const st = m.cancelled ? "cancelled" : m.my_status;
+        const label = { organizer: "You organise", going: "Going", invited: "Invited", declined: "Can't make it", cancelled: "Cancelled" }[st] || st;
+        const ppl = m.people.map((p) => `${esc(p.username)} <span class="cm-badge ${esc(p.status)}">${esc(p.status)}</span>`).join(" ");
+        const cal = !m.cancelled && (st === "organizer" || st === "going") ? `
+          <a class="cm-btn sm" target="_blank" rel="noopener" href="${esc(m.google_url)}"><i class="fab fa-google"></i> Google Calendar</a>
+          <a class="cm-btn ghost sm" href="${esc(m.ics_url)}"><i class="fas fa-calendar-plus"></i> Phone / Outlook (.ics)</a>` : "";
+        const reply = !m.cancelled && (st === "invited" || st === "declined" || st === "going") && !m.is_organizer ? `
+          <button class="cm-btn green sm" data-going="${m.id}">Going</button>
+          <button class="cm-btn ghost sm" data-notgoing="${m.id}">Can't make it</button>` : "";
+        const cancel = m.is_organizer && !m.cancelled ? `<button class="cm-btn red sm" data-cancel="${m.id}">Cancel</button>` : "";
+        const where = m.crag_slug ? `<a href="/crag/${encodeURIComponent(m.crag_slug)}/">${esc(m.place)}</a>` : esc(m.place);
+        const maps = m.lat != null && m.lng != null ? ` · <a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${m.lat},${m.lng}">Maps</a>` : "";
+        return `<div class="cm-card cm-plan ${m.cancelled ? "cancelled" : ""}">
+          <div class="cm-row" style="justify-content:space-between"><span class="cm-when">${when(m.starts_at)} – ${new Date(m.ends_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+            <span class="cm-badge ${esc(st)}">${esc(label)}</span></div>
+          <h3 style="margin:6px 0">${esc(m.title)}</h3>
+          <div class="cm-muted"><i class="fas fa-map-marker-alt"></i> ${where}${maps} · organised by ${esc(m.organizer)}</div>
+          ${m.note ? `<p style="margin:8px 0">${esc(m.note)}</p>` : ""}
+          <div class="cm-muted" style="margin:6px 0 10px">${ppl}</div>
+          <div class="cm-row">${reply}${cal}${cancel}</div></div>`;
+      }).join("") : '<div class="cm-card cm-muted">Nothing planned yet. Add a friend, then book a climb together.</div>';
+      setCount("cm-n-plans", d.results.filter((m) => !m.cancelled && m.my_status === "invited").length);
+    } catch (e) { $("cm-plans").innerHTML = `<div class="cm-card cm-muted">${esc(e.message)}</div>`; }
+  }
+  $("tab-plans").addEventListener("click", async (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    try {
+      if (b.dataset.going) await call("POST", `/api/community/meetups/${b.dataset.going}/respond/`, { going: true });
+      else if (b.dataset.notgoing) await call("POST", `/api/community/meetups/${b.dataset.notgoing}/respond/`, { going: false });
+      else if (b.dataset.cancel) { if (!confirm("Cancel this climb for everyone?")) return; await call("POST", `/api/community/meetups/${b.dataset.cancel}/cancel/`, {}); }
+      else if (b.id === "cm-book") { openPlan({}); return; }
+      else return;
+      loadPlans();
+    } catch (err) { alert(err.message); }
+  });
+
+  // ------------------------------------------------------------------ book-a-climb dialog
+  let planPost = null;
+  async function openPlan(opts) {
+    if (!LOGGED_IN) return (location.href = "/login/?next=/community/");
+    if (!friendsData.friends.length) await loadFriends();
+    planPost = opts.post || null;
+    const t = new Date(); t.setDate(t.getDate() + 1); t.setHours(18, 0, 0, 0);
+    const pad = (n) => String(n).padStart(2, "0");
+    $("mt-start").value = `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T18:00`;
+    $("mt-title").value = planPost ? `Climb: ${planPost.title}`.slice(0, 120) : "Climbing session";
+    const pl = planPost && planPost.place;
+    $("mt-crag").value = pl && pl.crag ? String(pl.crag.id) : "";
+    $("mt-place").value = pl && !pl.crag ? pl.name : "";
+    $("mt-place").dataset.lat = pl && pl.lat != null ? pl.lat : ""; $("mt-place").dataset.lng = pl && pl.lng != null ? pl.lng : "";
+    const pre = new Set([opts.userId, planPost && planPost.author.id].filter(Boolean));
+    $("mt-friends").innerHTML = friendsData.friends.length ? friendsData.friends.map((f) =>
+      `<label class="cm-check"><input type="checkbox" value="${f.user_id}" ${pre.has(f.user_id) ? "checked" : ""}> ${esc(f.username)}</label>`).join("")
+      : "Add friends first (Friends tab).";
+    $("mt-note").value = ""; $("mt-msg").textContent = "";
+    $("cm-modal").style.display = "flex";
+  }
+  $("cm-close").onclick = () => $("cm-modal").style.display = "none";
+  $("cm-modal").onclick = (e) => { if (e.target.id === "cm-modal") $("cm-modal").style.display = "none"; };
+  $("mt-crag").onchange = () => { $("mt-place").style.display = $("mt-crag").value ? "none" : ""; };
+  $("mt-save").onclick = async () => {
+    const invite = [...$("mt-friends").querySelectorAll("input:checked")].map((i) => +i.value);
+    const start = $("mt-start").value;
+    if (!start) return ($("mt-msg").textContent = "Choose a date and time.");
+    const body = { title: $("mt-title").value, starts_at: new Date(start).toISOString(), duration_minutes: +$("mt-dur").value,
+      invite_user_ids: invite, note: $("mt-note").value, post_id: planPost ? planPost.id : null };
+    if ($("mt-crag").value) body.crag_id = +$("mt-crag").value;
+    else { body.place_name = $("mt-place").value;
+           if ($("mt-place").dataset.lat) { body.lat = +$("mt-place").dataset.lat; body.lng = +$("mt-place").dataset.lng; } }
+    $("mt-save").disabled = true;
+    try {
+      const d = await call("POST", "/api/community/meetups/new/", body);
+      $("cm-modal").style.display = "none";
+      showTab("plans");
+      setTimeout(() => alert(d.message + " Use the calendar buttons to add it to your calendar."), 50);
+    } catch (e) { $("mt-msg").textContent = e.message; }
+    finally { $("mt-save").disabled = false; }
+  };
+
+  // ------------------------------------------------------------------ badges + start
+  function setCount(id, n) { $(id).innerHTML = n ? `<span class="cm-count">${n}</span>` : ""; }
+  async function refreshCounts() {
+    if (!LOGGED_IN) return;
+    try {
+      const [f, m] = await Promise.all([call("GET", "/api/community/friends/"), call("GET", "/api/community/meetups/")]);
+      friendsData = f;
+      setCount("cm-n-friends", f.incoming.length);
+      setCount("cm-n-plans", m.results.filter((x) => !x.cancelled && x.my_status === "invited").length);
+    } catch (e) {}
+  }
+  loadFeed();
+  refreshCounts();
+  const start = location.hash.replace("#", "");
+  if (["friends", "plans"].includes(start)) showTab(start);
+})();
+</script>
+{% endblock %}

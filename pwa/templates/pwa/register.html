@@ -1,0 +1,23 @@
+<!-- GoClimb PWA: register the service worker + offline banner (pwa app) -->
+<div id="gc-offline-banner"
+     style="position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:5000;
+            background:#0f172a;color:#fff;padding:9px 16px;border-radius:999px;font:500 13px Poppins,system-ui,sans-serif;
+            box-shadow:0 6px 20px rgba(0,0,0,.3);display:none;gap:8px;align-items:center;">
+  <i class="fas fa-plane"></i><span>You're offline: showing saved pages</span>
+</div>
+<script>
+(function () {
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(function (err) {
+        console.warn("GoClimb offline mode unavailable:", err);
+      });
+    });
+  }
+  var banner = document.getElementById("gc-offline-banner");
+  function update() { banner.style.display = navigator.onLine ? "none" : "flex"; }
+  window.addEventListener("online", update);
+  window.addEventListener("offline", update);
+  update();
+})();
+</script>

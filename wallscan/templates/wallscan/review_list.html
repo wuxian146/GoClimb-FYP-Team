@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .rv-wrap { width: 100%; max-width: 1100px; margin: 0 auto; align-self: flex-start; padding-bottom: 40px; }
+  .rv-card { background: #fff; color: #1e293b; border-radius: 16px; padding: 18px; margin-bottom: 14px; box-shadow: 0 4px 18px rgba(0,0,0,.1); }
+  .rv-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .rv-head h2 { margin: 0; color: #0f172a; }
+  .rv-btn { border: 0; border-radius: 12px; padding: 11px 15px; background: #2563eb; color: #fff; text-decoration: none;
+            font-size: 14px; font-weight: 500; display: inline-flex; gap: 8px; align-items: center; }
+  .rv-btn.ghost { background: #e2e8f0; color: #1e293b; }
+  .rv-tabs { display: flex; gap: 8px; margin: 14px 0 4px; flex-wrap: wrap; }
+  .rv-tab { padding: 8px 14px; border-radius: 999px; background: #f1f5f9; color: #334155; text-decoration: none; font-size: 14px; }
+  .rv-tab.on { background: #0f172a; color: #fff; }
+  .rv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+  .rv-wall { border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; text-decoration: none; color: inherit; background: #f8fafc; }
+  .rv-wall img { width: 100%; height: 150px; object-fit: cover; display: block; background: #e2e8f0; }
+  .rv-wall .body { padding: 10px 12px; font-size: 13px; line-height: 1.55; color: #475569; }
+  .rv-wall b { color: #0f172a; font-size: 15px; }
+  .rv-badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px; text-transform: uppercase; }
+  .rv-badge.pending { background: #fef3c7; color: #92400e; } .rv-badge.approved { background: #dcfce7; color: #166534; }
+  .rv-badge.rejected { background: #fee2e2; color: #991b1b; }
+  .rv-src { display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 6px; background: #e0e7ff; color: #3730a3; }
+  .rv-empty { color: #64748b; padding: 20px 0; }
+</style>
+
+<div class="rv-wrap">
+  <div class="rv-card">
+    <div class="rv-head">
+      <h2><i class="fas fa-shield-alt"></i> Wall review</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <a class="rv-btn" href="/ar/review/locations/new/"><i class="fas fa-map-marker-alt"></i> Add location</a>
+        <a class="rv-btn" href="/community/review/places/"><i class="fas fa-map-marked-alt"></i> Community places</a>
+        <a class="rv-btn ghost" href="/ar/scan/"><i class="fas fa-camera"></i> Wall Scan</a>
+      </div>
+    </div>
+    <div class="rv-tabs">
+      <a class="rv-tab {% if status == 'pending' %}on{% endif %}" href="?status=pending">Pending ({{ counts.pending }})</a>
+      <a class="rv-tab {% if status == 'approved' %}on{% endif %}" href="?status=approved">Approved ({{ counts.approved }})</a>
+      <a class="rv-tab {% if status == 'rejected' %}on{% endif %}" href="?status=rejected">Rejected ({{ counts.rejected }})</a>
+      <a class="rv-tab {% if status == 'all' %}on{% endif %}" href="?status=all">All</a>
+    </div>
+  </div>
+
+  <div class="rv-card">
+    {% if walls %}
+    <div class="rv-grid">
+      {% for w in walls %}
+      <a class="rv-wall" href="/ar/review/{{ w.wall_id }}/">
+        <img loading="lazy" src="/ar/photo/{{ w.wall_id }}" alt="">
+        <div class="body">
+          <b>{{ w.name|default:"Unnamed wall" }}</b><br>
+          {{ w.venue|default:"-" }} · {{ w.mode }}<br>
+          {{ w.hold_count }} holds · {{ w.route_count }} routes<br>
+          <span class="rv-badge {{ w.status }}">{{ w.get_status_display }}</span>
+          <span class="rv-src">{% if w.source == "app" %}Vuforia app{% elif w.source == "import" %}imported{% else %}website{% endif %}</span><br>
+          by {{ w.uploaded_by.username|default:"unknown" }} · {{ w.created_at|date:"d M Y H:i" }}
+          {% if w.crag %}<br><i class="fas fa-map-marker-alt"></i> {{ w.crag.name }}{% endif %}
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+      <p class="rv-empty">Nothing here. New scans from the app and the website appear under "Pending".</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

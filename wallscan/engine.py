@@ -45,7 +45,9 @@ class ArEngine:
         self.prefix = prefix.rstrip("/")
 
     # ------------------------------------------------------------------ helpers
-    def _admin(self, headers):
+    def _admin(self, headers, is_admin=False):
+        if is_admin:                          # a logged-in staff user, checked by Django
+            return
         if self.admin_token:
             if not hmac.compare_digest(headers.get("X-Admin-Token", "") or "", self.admin_token):
                 raise Forbidden()
@@ -67,7 +69,7 @@ class ArEngine:
         return html.encode("utf-8")
 
     # ------------------------------------------------------------------ dispatch
-    def handle(self, method: str, p: str, q: dict, body: bytes, headers) -> tuple:
+    def handle(self, method: str, p: str, q: dict, body: bytes, headers, is_admin: bool = False) -> tuple:
         """Returns (status, body, content_type). body is a dict (JSON) or bytes."""
         store, service = self.store, self.service
         try:
@@ -77,7 +79,7 @@ class ArEngine:
                 return 200, {"api_version": API_VERSION, "name": "goclimb",
                              "admin_token_required": bool(self.admin_token)}, None
             if method == "GET" and p == "/api/admin/check":
-                self._admin(headers)
+                self._admin(headers, is_admin)
                 return 200, {"ok": True}, None
             if method == "GET" and p == "/api/walls":
                 near = None
@@ -138,7 +140,7 @@ class ArEngine:
 
             # -------------------------------------------------------------- admin (edits saved walls)
             if m and method in ("PUT", "DELETE"):
-                self._admin(headers)
+                self._admin(headers, is_admin)
                 wid = m.group(1)
                 if method == "PUT":
                     b = self._json(body)
@@ -148,7 +150,7 @@ class ArEngine:
                 return 200, {"ok": True}, None
             m = re.fullmatch(r"/api/walls/" + ID + r"/(holds|redetect|routes/generate|routes|export|review)", p)
             if m and method == "POST":
-                self._admin(headers)
+                self._admin(headers, is_admin)
                 wid, what = m.groups()
                 b = self._json(body)
                 if what == "holds":
@@ -166,7 +168,7 @@ class ArEngine:
                 return 200, {"path": store.export_unity(wid, self.unity_dir)}, None
             m = re.fullmatch(r"/api/walls/" + ID + r"/holds/(H\d+)", p)
             if m and method in ("PUT", "DELETE"):
-                self._admin(headers)
+                self._admin(headers, is_admin)
                 wid, hid = m.groups()
                 if method == "PUT":
                     b = self._json(body)
@@ -176,12 +178,12 @@ class ArEngine:
                 return 200, {"ok": True}, None
             m = re.fullmatch(r"/api/walls/" + ID + r"/routes/(R\d+)", p)
             if m and method == "DELETE":
-                self._admin(headers)
+                self._admin(headers, is_admin)
                 store.delete_route(*m.groups())
                 return 200, {"ok": True}, None
             m = re.fullmatch(r"/api/walls/" + ID + r"/routes/(R\d+)/(limb|sequence)", p)
             if m and method == "POST":
-                self._admin(headers)
+                self._admin(headers, is_admin)
                 wid, rid, what = m.groups()
                 b = self._json(body)
                 if what == "limb":

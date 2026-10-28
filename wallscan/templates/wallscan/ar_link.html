@@ -1,0 +1,51 @@
+{# Builds links that open the GoClimbAR Unity app (Vuforia camera) from the website, signed in as this user. #}
+{{ ar_android_package|json_script:"gc-ar-pkg" }}
+<script>
+window.GoClimbAR = (function () {
+  var pkg = JSON.parse(document.getElementById("gc-ar-pkg").textContent || '""');
+  var loggedIn = {{ request.user.is_authenticated|yesno:"true,false" }};
+  var server = location.origin + "/ar";           // the app talks back to THIS website
+  var ua = navigator.userAgent;
+  var isAndroid = /Android/i.test(ua);
+  var isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  var token = "";
+
+  // Fetch the app sign-in token in advance, so tapping the button opens the app instantly
+  // (browsers only allow opening an app straight after a tap).
+  function csrf() { var m = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/); return m ? decodeURIComponent(m[1]) : ""; }
+  if (loggedIn && navigator.onLine) {
+    fetch("/ar/app-token/", { method: "POST", credentials: "same-origin", headers: { "X-CSRFToken": csrf() } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d && d.token) token = d.token; })
+      .catch(function () {});
+  }
+
+  function appPage(path, missing) {
+    return "/ar/app/?open=" + encodeURIComponent(path) + (missing ? "&missing=1" : "");
+  }
+
+  // path: "scan" or "wall/<wall_id>"
+  function link(path) {
+    var q = "server=" + encodeURIComponent(server) + (token ? "&token=" + encodeURIComponent(token) : "");
+    if (isAndroid) {
+      var fallback = encodeURIComponent(location.origin + appPage(path, true));
+      return "intent://" + path + "?" + q + "#Intent;scheme=goclimb;" +
+             (pkg ? "package=" + pkg + ";" : "") + "S.browser_fallback_url=" + fallback + ";end";
+    }
+    return "goclimb://" + path + "?" + q;
+  }
+
+  function open(path) {
+    if (!isAndroid && !isIOS) { location.href = appPage(path, false); return; }   // on a computer
+    var started = Date.now();
+    location.href = link(path);
+    if (isIOS) {
+      setTimeout(function () {
+        if (!document.hidden && Date.now() - started < 4000) location.href = appPage(path, true);
+      }, 1800);
+    }
+  }
+
+  return { open: open, link: link, isMobile: isAndroid || isIOS };
+})();
+</script>

@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  .al-wrap { width: 100%; max-width: 1100px; margin: 0 auto; align-self: flex-start; padding-bottom: 40px; }
+  .al-card { background: #fff; color: #1e293b; border-radius: 16px; padding: 18px; margin-bottom: 14px; box-shadow: 0 4px 18px rgba(0,0,0,.1); }
+  .al-card h2 { margin: 0 0 4px; color: #0f172a; }
+  .al-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; }
+  #al-map { height: 460px; border-radius: 12px; z-index: 0; }
+  .al-form label { display: block; font-size: 13px; color: #475569; margin: 10px 0 4px; }
+  .al-form input, .al-form select, .al-form textarea { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 14px; background: #fff; }
+  .al-form textarea { min-height: 70px; }
+  .al-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .al-btn { border: 0; border-radius: 12px; padding: 12px 16px; font-size: 15px; cursor: pointer; background: #2563eb; color: #fff;
+            text-decoration: none; display: inline-flex; gap: 8px; align-items: center; margin-top: 14px; }
+  .al-btn.ghost { background: #e2e8f0; color: #1e293b; }
+  .al-ok { background: #dcfce7; color: #166534; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+  .al-err { color: #b91c1c; font-size: 13px; }
+  .al-hint { font-size: 13px; color: #64748b; margin: 8px 0 0; }
+  @media (max-width: 860px) { .al-grid { grid-template-columns: 1fr; } #al-map { height: 340px; } }
+</style>
+
+<div class="al-wrap">
+  <div class="al-card">
+    <h2><i class="fas fa-map-marker-alt"></i> Add a location to the map</h2>
+    <p class="al-hint">Click the map (or search your current position) to place the crag, then fill in the details.</p>
+  </div>
+
+  {% if added %}
+    <div class="al-ok"><i class="fas fa-check-circle"></i> <b>{{ added.name }}</b> was added. It now shows on the
+      <a href="/map/">map</a> and in search.</div>
+  {% endif %}
+
+  <div class="al-grid">
+    <div class="al-card">
+      <div id="al-map"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="al-btn ghost" id="al-here"><i class="fas fa-location-arrow"></i> Use my location</button>
+      </div>
+      <p class="al-hint" id="al-pos">No position chosen yet.</p>
+    </div>
+
+    <form method="post" class="al-card al-form">
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="al-err">{{ form.non_field_errors }}</div>{% endif %}
+      <label for="{{ form.name.id_for_label }}">Name *</label>{{ form.name }}{{ form.name.errors }}
+      <label for="{{ form.description.id_for_label }}">Description</label>{{ form.description }}
+      <div class="al-two">
+        <div><label for="{{ form.lat.id_for_label }}">Latitude *</label>{{ form.lat }}{{ form.lat.errors }}</div>
+        <div><label for="{{ form.lng.id_for_label }}">Longitude *</label>{{ form.lng }}{{ form.lng.errors }}</div>
+      </div>
+      <label for="{{ form.rock_type.id_for_label }}">Rock type</label>{{ form.rock_type }}
+      <div class="al-two">
+        <div><label for="{{ form.difficulty_min.id_for_label }}">Easiest grade</label>{{ form.difficulty_min }}</div>
+        <div><label for="{{ form.difficulty_max.id_for_label }}">Hardest grade</label>{{ form.difficulty_max }}</div>
+      </div>
+      <label for="{{ form.length_m.id_for_label }}">Typical route length (m)</label>{{ form.length_m }}
+      <label for="{{ form.hazards.id_for_label }}">Safety notes</label>{{ form.hazards }}
+      <label for="{{ form.image.id_for_label }}">Photo URL (optional)</label>{{ form.image }}
+      <div style="display:none">{{ form.slug }}</div>
+      <button class="al-btn" type="submit"><i class="fas fa-plus"></i> Add location</button>
+      <a class="al-btn ghost" href="/ar/review/">Back to review</a>
+    </form>
+  </div>
+</div>
+
+{{ crags|json_script:"al-crags" }}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function () {
+  const latInput = document.getElementById("{{ form.lat.id_for_label }}");
+  const lngInput = document.getElementById("{{ form.lng.id_for_label }}");
+  const existing = JSON.parse(document.getElementById("al-crags").textContent);
+  const start = latInput.value && lngInput.value ? [+latInput.value, +lngInput.value] : [1.3521, 103.8198];
+  const map = L.map("al-map").setView(start, latInput.value ? 14 : 11);
+  L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+    { maxZoom: 19, attribution: "Tiles &copy; Esri" }).addTo(map);
+  existing.forEach((c) => L.circleMarker([c.lat, c.lng], { radius: 6, color: "#64748b" }).addTo(map).bindTooltip(c.name));
+
+  let marker = null;
+  function place(lat, lng) {
+    lat = +lat.toFixed(6); lng = +lng.toFixed(6);
+    latInput.value = lat; lngInput.value = lng;
+    if (marker) marker.setLatLng([lat, lng]); else marker = L.marker([lat, lng], { draggable: true }).addTo(map)
+      .on("dragend", (e) => place(e.target.getLatLng().lat, e.target.getLatLng().lng));
+    document.getElementById("al-pos").textContent = `Position: ${lat}, ${lng}`;
+  }
+  map.on("click", (e) => place(e.latlng.lat, e.latlng.lng));
+  [latInput, lngInput].forEach((el) => el.addEventListener("change", () => {
+    if (latInput.value && lngInput.value) { place(+latInput.value, +lngInput.value); map.setView([+latInput.value, +lngInput.value]); }
+  }));
+  if (latInput.value && lngInput.value) place(+latInput.value, +lngInput.value);
+
+  document.getElementById("al-here").onclick = () => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition((p) => { place(p.coords.latitude, p.coords.longitude); map.setView([p.coords.latitude, p.coords.longitude], 15); },
+      () => { document.getElementById("al-pos").textContent = "Could not get your location (it needs https or localhost)."; });
+  };
+})();
+</script>
+{% endblock %}

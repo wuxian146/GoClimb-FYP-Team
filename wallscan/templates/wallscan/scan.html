@@ -1,55 +1,132 @@
 {% extends "base.html" %}
 {% block content %}
 <style>
-  .ws-wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
-  .ws-card { background: #fff; border-radius: 14px; box-shadow: 0 4px 18px rgba(0,0,0,.08); padding: 18px; margin-bottom: 16px; color: #1e293b; }
+  .ws-wrap { width: 100%; max-width: 1100px; margin: 0 auto; padding: 8px 0 90px; align-self: flex-start; }
+  .ws-card { background: #fff; color: #1e293b; border-radius: 16px; box-shadow: 0 4px 18px rgba(0,0,0,.10);
+             padding: 18px; margin-bottom: 14px; }
+  .ws-card h2, .ws-card h3 { margin: 0; color: #0f172a; }
+  .ws-sub { color: #64748b; margin: 4px 0 14px; font-size: 14px; }
   .ws-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-  .ws-row label { font-size: 14px; }
-  .ws-btn { border: 0; border-radius: 10px; padding: 11px 16px; font-size: 15px; cursor: pointer; background: #2563eb; color: #fff; }
+  .ws-btn { border: 0; border-radius: 12px; padding: 12px 16px; font-size: 15px; font-weight: 500; cursor: pointer;
+            background: #2563eb; color: #fff; display: inline-flex; gap: 8px; align-items: center; justify-content: center;
+            min-height: 46px; text-decoration: none; }
   .ws-btn.ghost { background: #e2e8f0; color: #1e293b; }
   .ws-btn.green { background: #16a34a; }
+  .ws-btn.red { background: #dc2626; }
   .ws-btn:disabled { opacity: .5; cursor: default; }
-  .ws-stage { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; }
-  @media (max-width: 800px) { .ws-stage { grid-template-columns: 1fr; } }
-  #ws-canvas { width: 100%; height: auto; border-radius: 10px; background: #0f172a; display: block; touch-action: manipulation; }
-  .ws-route { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 8px; cursor: pointer; }
-  .ws-route:hover { background: #f1f5f9; }
+  .ws-select { padding: 11px; border: 1px solid #cbd5e1; border-radius: 12px; font-size: 15px; background: #fff; min-height: 46px; }
+  .ws-input { padding: 11px; border: 1px solid #cbd5e1; border-radius: 12px; font-size: 15px; width: 100%; }
+  .ws-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+  .ws-actions .ws-btn { width: 100%; }
+  .ws-status { font-size: 14px; color: #475569; margin-top: 10px; min-height: 20px; }
+  .ws-note { font-size: 12px; color: #64748b; margin-top: 10px; line-height: 1.5; }
+  .ws-badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px; text-transform: uppercase; }
+  .ws-badge.pending { background: #fef3c7; color: #92400e; }
+  .ws-badge.approved { background: #dcfce7; color: #166534; }
+  .ws-badge.rejected { background: #fee2e2; color: #991b1b; }
+  .ws-badge.unreviewed { background: #e2e8f0; color: #334155; }
+
+  /* Camera */
+  .ws-cam { position: relative; background: #000; border-radius: 14px; overflow: hidden; margin-top: 12px; }
+  .ws-cam video { width: 100%; max-height: 70vh; display: block; object-fit: contain; background: #000; }
+  .ws-cam .frame { position: absolute; inset: 6%; border: 2px dashed rgba(255,255,255,.8); border-radius: 10px; pointer-events: none; }
+  .ws-cam .bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px; display: flex; justify-content: center;
+                 gap: 18px; align-items: center; background: linear-gradient(transparent, rgba(0,0,0,.6)); }
+  .ws-shutter { width: 70px; height: 70px; border-radius: 50%; border: 5px solid #fff; background: rgba(255,255,255,.25); cursor: pointer; }
+  .ws-shutter:active { background: rgba(255,255,255,.7); }
+  .ws-round { width: 46px; height: 46px; border-radius: 50%; border: 0; background: rgba(0,0,0,.55); color: #fff; font-size: 18px; cursor: pointer; }
+
+  /* Result */
+  .ws-stage { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; }
+  #ws-canvas { width: 100%; height: auto; border-radius: 12px; background: #0f172a; display: block; }
+  .ws-route { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 10px; cursor: pointer; border: 1px solid #e2e8f0; margin-bottom: 6px; }
   .ws-route.off { opacity: .4; }
   .ws-dot { width: 14px; height: 14px; border-radius: 50%; flex: none; }
-  .ws-status { font-size: 14px; color: #475569; margin-top: 8px; min-height: 20px; }
-  .ws-note { font-size: 12px; color: #64748b; margin-top: 10px; }
-  .ws-walls { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
-  .ws-wall { border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; cursor: pointer; background: #f8fafc; }
-  .ws-wall img { width: 100%; height: 110px; object-fit: cover; display: block; }
-  .ws-wall div { padding: 6px 8px; font-size: 13px; }
-  input[type=text], select { padding: 9px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; }
+  .ws-route .grow { flex: 1; font-size: 14px; }
+
+  /* Saved walls */
+  .ws-walls { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+  .ws-wall { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; cursor: pointer; background: #f8fafc; }
+  .ws-wall img { width: 100%; height: 120px; object-fit: cover; display: block; background: #e2e8f0; }
+  .ws-wall div { padding: 8px 10px; font-size: 13px; line-height: 1.4; }
   #ws-file { display: none; }
+
+  @media (max-width: 820px) {
+    .ws-stage { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    .ws-card { padding: 14px; border-radius: 14px; }
+    .ws-actions { grid-template-columns: 1fr 1fr; }
+    .ws-actions .ws-btn.wide { grid-column: 1 / -1; }
+    .ws-walls { grid-template-columns: 1fr 1fr; }
+    .ws-wall img { height: 100px; }
+    .ws-row.ws-settings > * { flex: 1; }
+  }
 </style>
 
 <div class="ws-wrap">
+  <!-- Scan -->
   <div class="ws-card">
-    <h2 style="margin:0 0 6px"><i class="fas fa-camera"></i> Wall Scan</h2>
-    <p style="margin:0 0 12px;color:#64748b">Take a photo of a climbing wall (or upload one). GoClimb finds the holds and suggests routes.</p>
-    <div class="ws-row">
-      <select id="ws-mode"><option value="indoor">Indoor wall</option><option value="outdoor">Outdoor crag</option></select>
-      <label>Routes <select id="ws-max"><option>3</option><option selected>6</option><option>10</option></select></label>
-      <button class="ws-btn" id="ws-take"><i class="fas fa-camera"></i> Take / upload photo</button>
-      <input type="file" id="ws-file" accept="image/*" capture="environment">
+    <div class="ws-row" style="justify-content:space-between">
+      <h2><i class="fas fa-camera"></i> Wall Scan</h2>
+      {% if request.user.is_staff %}<a class="ws-btn ghost" href="/ar/review/"><i class="fas fa-shield-alt"></i> Review queue</a>{% endif %}
     </div>
+    <p class="ws-sub">Photograph a climbing wall. GoClimb finds the holds and suggests routes. Saved walls go to an admin for review.</p>
+
+    <div class="ws-row ws-settings">
+      <select class="ws-select" id="ws-mode">
+        <option value="indoor" {% if default_mode == "indoor" %}selected{% endif %}>Indoor wall</option>
+        <option value="outdoor" {% if default_mode == "outdoor" %}selected{% endif %}>Outdoor crag</option>
+      </select>
+      <select class="ws-select" id="ws-max" title="How many routes to suggest">
+        <option value="3">3 routes</option><option value="6" selected>6 routes</option><option value="10">10 routes</option>
+      </select>
+    </div>
+
+    <div class="ws-actions">
+      <button class="ws-btn" id="ws-cam-open"><i class="fas fa-video"></i> Camera</button>
+      <button class="ws-btn ghost" id="ws-take"><i class="fas fa-image"></i> Photo</button>
+      <button class="ws-btn green wide" id="ws-ar-scan" title="Opens the GoClimbAR app: Vuforia live AR"><i class="fas fa-cube"></i> AR camera</button>
+    </div>
+    <input type="file" id="ws-file" accept="image/*" capture="environment">
+
+    <div class="ws-cam" id="ws-cam" style="display:none">
+      <video id="ws-video" playsinline muted autoplay></video>
+      <div class="frame"></div>
+      <div class="bar">
+        <button class="ws-round" id="ws-cam-close" title="Close camera"><i class="fas fa-times"></i></button>
+        <button class="ws-shutter" id="ws-shutter" title="Take photo"></button>
+        <button class="ws-round" id="ws-cam-flip" title="Switch camera"><i class="fas fa-sync-alt"></i></button>
+      </div>
+    </div>
+
     <div class="ws-status" id="ws-status"></div>
+    <div class="ws-note" id="ws-offline-note" style="display:none">
+      <i class="fas fa-plane"></i> You're offline. Saved walls below still work. To scan a <b>new</b> wall offline,
+      use the <b>AR camera</b>: the GoClimbAR app finds holds and routes on the phone itself.
+    </div>
   </div>
 
+  <!-- Result -->
   <div class="ws-card" id="ws-result" style="display:none">
     <div class="ws-stage">
       <canvas id="ws-canvas"></canvas>
       <div>
-        <h3 style="margin:0 0 8px" id="ws-title">Routes</h3>
+        <div class="ws-row" style="justify-content:space-between;margin-bottom:8px">
+          <h3 id="ws-title">Routes</h3><span id="ws-review-badge"></span>
+        </div>
+        <button class="ws-btn green" id="ws-ar-wall" style="display:none;width:100%;margin-bottom:8px">
+          <i class="fas fa-mobile-alt"></i> AR camera (phone app)
+        </button>
+        <button class="ws-btn" id="ws-web-ar" style="display:none;width:100%;margin-bottom:10px;background:#7c3aed">
+          <i class="fas fa-video"></i> Live AR in this browser
+        </button>
         <div id="ws-routes"></div>
-        <div id="ws-save-box" style="margin-top:14px">
-          <input type="text" id="ws-name" placeholder="Wall name" style="width:100%;margin-bottom:8px">
-          <input type="text" id="ws-venue" placeholder="Gym / crag" style="width:100%;margin-bottom:8px">
-          <div class="ws-row">
-            <button class="ws-btn green" id="ws-save">Save wall</button>
+        <div id="ws-save-box" style="margin-top:12px">
+          <input class="ws-input" type="text" id="ws-name" placeholder="Wall name (e.g. Cave wall)" style="margin-bottom:8px">
+          <input class="ws-input" type="text" id="ws-venue" placeholder="Gym / crag (e.g. Boulder Planet)" style="margin-bottom:8px">
+          <div class="ws-actions" style="margin-top:0">
+            <button class="ws-btn green" id="ws-save"><i class="fas fa-paper-plane"></i> Submit</button>
             <button class="ws-btn ghost" id="ws-regen">New routes</button>
             <button class="ws-btn ghost" id="ws-discard">Discard</button>
           </div>
@@ -59,78 +136,84 @@
     </div>
   </div>
 
+  <!-- Saved walls -->
   <div class="ws-card">
     <div class="ws-row" style="justify-content:space-between;margin-bottom:10px">
-      <h3 style="margin:0">Saved walls</h3>
-      <input type="text" id="ws-search" placeholder="Search walls">
+      <h3>Saved walls</h3>
+      <button class="ws-btn ghost" id="ws-offline-save" title="Keep every wall you can see on this device"><i class="fas fa-download"></i> Save for offline</button>
     </div>
+    <input class="ws-input" type="text" id="ws-search" placeholder="Search walls or gyms" style="margin-bottom:12px">
+    <div class="ws-status" id="ws-offline-status" style="margin:-4px 0 10px"></div>
     <div class="ws-walls" id="ws-walls"></div>
+    <p class="ws-note">You see approved walls, plus your own submissions while they wait for review.</p>
   </div>
 </div>
 
+{% include "wallscan/ar_link.html" %}
+{% include "wallscan/webar.html" %}
 <script>
 (function () {
   const API = "/ar";
   const $ = (id) => document.getElementById(id);
   const canvas = $("ws-canvas"), ctx = canvas.getContext("2d");
-  let img = null, doc = null, scanId = null, hidden = new Set();
+  let img = null, doc = null, scanId = null, hidden = new Set(), arWallId = null, stream = null, facing = "environment";
 
   function status(t) { $("ws-status").textContent = t || ""; }
+  function csrf() { const m = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/); return m ? decodeURIComponent(m[1]) : ""; }
+  function badge(s) { return s ? `<span class="ws-badge ${s}">${s === "unreviewed" ? "not reviewed" : s}</span>` : ""; }
+  function esc(t) { const d = document.createElement("div"); d.textContent = t == null ? "" : String(t); return d.innerHTML; }
 
   async function call(method, path, body) {
-    const r = await fetch(API + path, {
-      method, headers: body ? { "Content-Type": "application/json" } : {},
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    const headers = {};
+    if (body) headers["Content-Type"] = "application/json";
+    if (method !== "GET") headers["X-CSRFToken"] = csrf();
+    const r = await fetch(API + path, { method, headers, credentials: "same-origin", body: body ? JSON.stringify(body) : undefined });
     const data = await r.json().catch(() => ({}));
+    if (r.status === 401 && data.login_url) { location.href = data.login_url; throw new Error("Please log in"); }
     if (!r.ok) throw Object.assign(new Error(data.error || ("HTTP " + r.status)), { status: r.status, data });
     return data;
   }
 
-  // Shrink big phone photos before upload (faster on mobile data, same result for detection).
-  function loadAndResize(file, maxSide) {
+  // ---------------------------------------------------------------- images -> base64
+  function fitToJpeg(source, w, h, maxSide) {
+    const s = Math.min(1, maxSide / Math.max(w, h));
+    const c = document.createElement("canvas");
+    c.width = Math.round(w * s); c.height = Math.round(h * s);
+    c.getContext("2d").drawImage(source, 0, 0, c.width, c.height);
+    const dataUrl = c.toDataURL("image/jpeg", 0.88);
+    return new Promise((resolve) => { const out = new Image(); out.onload = () => resolve({ image: out, b64: dataUrl.split(",")[1] }); out.src = dataUrl; });
+  }
+  function fromFile(file) {
     return new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(file);
-      const im = new Image();
-      im.onload = () => {
-        const s = Math.min(1, maxSide / Math.max(im.width, im.height));
-        const c = document.createElement("canvas");
-        c.width = Math.round(im.width * s); c.height = Math.round(im.height * s);
-        c.getContext("2d").drawImage(im, 0, 0, c.width, c.height);
-        URL.revokeObjectURL(url);
-        const dataUrl = c.toDataURL("image/jpeg", 0.88);
-        const out = new Image();
-        out.onload = () => resolve({ image: out, b64: dataUrl.split(",")[1] });
-        out.src = dataUrl;
-      };
+      const url = URL.createObjectURL(file), im = new Image();
+      im.onload = () => { URL.revokeObjectURL(url); resolve(fitToJpeg(im, im.naturalWidth, im.naturalHeight, 1600)); };
       im.onerror = () => reject(new Error("Could not read that image"));
       im.src = url;
     });
   }
 
+  // ---------------------------------------------------------------- drawing
   function draw() {
     if (!img || !doc) return;
     canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
     ctx.drawImage(img, 0, 0);
     const W = canvas.width, H = canvas.height, r = Math.max(6, W / 90);
+    const byId = {}; (doc.holds || []).forEach((h) => byId[h.id] = h);
     ctx.lineWidth = Math.max(2, W / 300);
-    for (const h of doc.holds || []) {                      // all detected holds, faint
-      ctx.beginPath(); ctx.arc(h.x * W, h.y * H, r * 0.6, 0, 7);
-      ctx.strokeStyle = "rgba(255,255,255,.55)"; ctx.stroke();
-    }
+    for (const h of doc.holds || []) { ctx.beginPath(); ctx.arc(h.x * W, h.y * H, r * 0.6, 0, 7); ctx.strokeStyle = "rgba(255,255,255,.55)"; ctx.stroke(); }
     for (const rt of doc.routes || []) {
       if (hidden.has(rt.id)) continue;
-      const pts = rt.points || [];
-      ctx.strokeStyle = rt.color; ctx.fillStyle = rt.color;
-      ctx.beginPath();
-      pts.forEach((p, i) => (i ? ctx.lineTo(p.x * W, p.y * H) : ctx.moveTo(p.x * W, p.y * H)));
-      ctx.globalAlpha = 0.7; ctx.stroke(); ctx.globalAlpha = 1;
-      pts.forEach((p, i) => {
+      const pts = (rt.hold_ids || []).map((id) => byId[id]).filter(Boolean);
+      const use = pts.length ? pts : (rt.points || []);
+      const color = rt.color || "#f97316";
+      ctx.strokeStyle = color; ctx.fillStyle = color;
+      ctx.beginPath(); use.forEach((p, i) => (i ? ctx.lineTo(p.x * W, p.y * H) : ctx.moveTo(p.x * W, p.y * H)));
+      ctx.globalAlpha = 0.75; ctx.stroke(); ctx.globalAlpha = 1;
+      use.forEach((p, i) => {
         ctx.beginPath(); ctx.arc(p.x * W, p.y * H, r, 0, 7); ctx.fill();
-        if (i === 0 || i === pts.length - 1) {
-          ctx.font = `bold ${Math.round(r * 1.6)}px sans-serif`;
-          ctx.fillStyle = "#fff"; ctx.fillText(i === 0 ? "S" : "T", p.x * W + r * 1.3, p.y * H + r * 0.5);
-          ctx.fillStyle = rt.color;
+        if (i === 0 || i === use.length - 1) {
+          ctx.font = `bold ${Math.round(r * 1.6)}px sans-serif`; ctx.fillStyle = "#fff";
+          ctx.fillText(i === 0 ? "S" : "T", p.x * W + r * 1.3, p.y * H + r * 0.5); ctx.fillStyle = color;
         }
       });
     }
@@ -138,49 +221,99 @@
 
   function showDoc(d, opts) {
     doc = d; hidden = new Set();
+    arWallId = opts.wallId || null;
+    $("ws-ar-wall").style.display = arWallId ? "" : "none";
+    $("ws-web-ar").style.display = arWallId ? "" : "none";
     $("ws-result").style.display = "";
     $("ws-title").textContent = opts.title;
+    $("ws-review-badge").innerHTML = d.review ? badge(d.review.status) : "";
     $("ws-save-box").style.display = opts.canSave ? "" : "none";
-    $("ws-disclaimer").textContent = (d.disclaimer || "") + " " + (d.warnings || []).join(" ");
+    const notes = [d.disclaimer || ""].concat(d.warnings || []);
+    if (d.review && d.review.note) notes.unshift("Admin note: " + d.review.note);
+    $("ws-disclaimer").textContent = notes.join(" ");
     const box = $("ws-routes"); box.innerHTML = "";
+    const routeReviews = (d.review && d.review.routes) || {};
     (d.routes || []).forEach((rt) => {
       const row = document.createElement("div");
+      const rv = routeReviews[rt.id];
       row.className = "ws-route";
-      row.innerHTML = `<span class="ws-dot" style="background:${rt.color}"></span>
-        <span>${rt.id} · ${rt.difficulty} · ${(rt.points || []).length} holds</span>`;
+      row.innerHTML = `<span class="ws-dot" style="background:${esc(rt.color || "#f97316")}"></span>
+        <span class="grow">${esc(rt.id)} · ${esc(rt.difficulty || "")} · ${(rt.hold_ids || rt.points || []).length} holds</span>${rv ? badge(rv.status) : ""}`;
       row.onclick = () => { hidden.has(rt.id) ? hidden.delete(rt.id) : hidden.add(rt.id); row.classList.toggle("off"); draw(); };
       box.appendChild(row);
     });
-    if (!(d.routes || []).length) box.textContent = "No routes found. Try a sharper, straight-on photo.";
+    if (!(d.routes || []).length) box.innerHTML = '<p class="ws-note">No routes to show yet. Try a sharper, straight-on photo, or wait for admin approval.</p>';
     draw();
-    $("ws-result").scrollIntoView({ behavior: "smooth" });
+    $("ws-result").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // ---------------------------------------------------------------- scanning
+  async function scanImage(prepared) {
+    img = prepared.image;
+    status("Finding holds and routes…");
+    const res = await call("POST", "/api/scan", { image_b64: prepared.b64, mode: $("ws-mode").value, max_routes: +$("ws-max").value });
+    scanId = res.scan_id;
+    const known = res.status === "known";
+    status(known ? "This wall is already in GoClimb." : `Found ${res.holds_detected} holds. Check the routes, then submit for review.`);
+    showDoc(res.doc, { title: known ? (res.doc.name || "Saved wall") : "New wall (preview)", canSave: !known, wallId: known ? res.wall_id : null });
+  }
+  async function guarded(fn) {
+    ["ws-take", "ws-cam-open", "ws-shutter"].forEach((id) => $(id).disabled = true);
+    try { await fn(); }
+    catch (err) { status(navigator.onLine ? "Scan failed: " + err.message : "You're offline. Use the AR camera to scan new walls offline."); }
+    finally { ["ws-take", "ws-cam-open", "ws-shutter"].forEach((id) => $(id).disabled = !navigator.onLine && id !== "ws-shutter"); }
   }
 
   $("ws-take").onclick = () => $("ws-file").click();
-  $("ws-file").onchange = async (e) => {
+  $("ws-file").onchange = (e) => {
     const f = e.target.files[0]; e.target.value = "";
-    if (!f) return;
-    $("ws-take").disabled = true;
-    try {
-      status("Preparing photo…");
-      const { image, b64 } = await loadAndResize(f, 1600);
-      img = image;
-      status("Finding holds and routes…");
-      const res = await call("POST", "/api/scan", { image_b64: b64, mode: $("ws-mode").value, max_routes: +$("ws-max").value });
-      scanId = res.scan_id;
-      const known = res.status === "known";
-      status(known ? "Recognised a saved wall." : `Found ${res.holds_detected} holds (preview, not saved).`);
-      showDoc(res.doc, { title: known ? (res.doc.name || "Saved wall") : "New wall (preview)", canSave: !known });
-    } catch (err) {
-      status(navigator.onLine ? "Scan failed: " + err.message : "You're offline. Scanning a new wall needs internet.");
-    } finally { $("ws-take").disabled = false; }
+    if (f) guarded(async () => { status("Preparing photo…"); await scanImage(await fromFile(f)); });
   };
 
-  $("ws-save").onclick = async () => {
+  // In-page camera: phone back camera or laptop webcam (needs https or localhost)
+  async function startCamera() {
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) || !window.isSecureContext) {
+      status("Live camera needs https (or localhost). Using the photo picker instead.");
+      $("ws-file").click(); return;
+    }
+    stopCamera();
     try {
-      const res = await call("POST", `/api/scans/${scanId}/save`, { name: $("ws-name").value, venue: $("ws-venue").value });
-      status(res.created ? "Saved!" : "This wall was already saved.");
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+      $("ws-video").srcObject = stream;
+      $("ws-cam").style.display = "";
+      $("ws-cam").scrollIntoView({ behavior: "smooth", block: "center" });
+      status("Fit the wall inside the dashed frame, then tap the white button.");
+    } catch (err) {
+      status("Camera unavailable (" + err.name + "). Using the photo picker instead.");
+      $("ws-file").click();
+    }
+  }
+  function stopCamera() {
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    stream = null; $("ws-cam").style.display = "none";
+  }
+  $("ws-cam-open").onclick = startCamera;
+  $("ws-cam-close").onclick = () => { stopCamera(); status(""); };
+  $("ws-cam-flip").onclick = () => { facing = facing === "environment" ? "user" : "environment"; startCamera(); };
+  $("ws-shutter").onclick = () => guarded(async () => {
+    const v = $("ws-video");
+    if (!v.videoWidth) throw new Error("camera not ready");
+    // keep only what was inside the dashed frame (6% margin each side)
+    const c = document.createElement("canvas"), mx = Math.round(v.videoWidth * 0.06), my = Math.round(v.videoHeight * 0.06);
+    c.width = v.videoWidth - 2 * mx; c.height = v.videoHeight - 2 * my;
+    c.getContext("2d").drawImage(v, mx, my, c.width, c.height, 0, 0, c.width, c.height);
+    stopCamera();
+    await scanImage(await fitToJpeg(c, c.width, c.height, 1600));
+  });
+
+  $("ws-save").onclick = async () => {
+    if (!$("ws-name").value.trim() || !$("ws-venue").value.trim()) { status("Please enter the wall name and the gym / crag."); return; }
+    try {
+      const res = await call("POST", `/api/scans/${scanId}/save`, { name: $("ws-name").value.trim(), venue: $("ws-venue").value.trim() });
+      status(res.created ? "Submitted! An admin will review it. You can already open it in the AR camera." : "This wall was already saved.");
       $("ws-save-box").style.display = "none";
+      arWallId = res.wall_id; $("ws-ar-wall").style.display = ""; $("ws-web-ar").style.display = "";
+      $("ws-review-badge").innerHTML = badge(res.review_status || "pending");
       loadWalls();
     } catch (err) {
       status(err.status === 409 ? "This wall looks like one that is already saved." : "Save failed: " + err.message);
@@ -196,33 +329,89 @@
     scanId = null; $("ws-result").style.display = "none"; status("Discarded.");
   };
 
+  // ---------------------------------------------------------------- Vuforia AR camera (GoClimbAR app)
+  $("ws-ar-scan").onclick = () => GoClimbAR.open("scan");
+  $("ws-ar-wall").onclick = () => { if (arWallId) GoClimbAR.open("wall/" + arWallId); };
+  $("ws-web-ar").onclick = () => {
+    if (!arWallId || !img || !doc) return;
+    const shown = (doc.routes || []).map((r) => r.id).filter((id) => !hidden.has(id));
+    GoClimbWebAR.start({ wallId: arWallId, doc, img, routeIds: shown });
+  };
+  // "Scan this wall" from a crag page fills in the gym / crag name
+  const venueParam = new URLSearchParams(location.search).get("venue");
+  if (venueParam) $("ws-venue").value = venueParam;
+
+  // ---------------------------------------------------------------- saved walls
   async function openWall(w) {
     try {
       status("Loading wall…");
       const d = await call("GET", `/api/walls/${w.wall_id}/unity`);
       const im = new Image();
-      im.onload = () => { img = im; showDoc(d, { title: `${w.name} · ${w.venue}`, canSave: false }); status(""); };
+      im.onload = () => { img = im; showDoc(d, { title: `${w.name} · ${w.venue}`, canSave: false, wallId: w.wall_id }); status(""); };
+      im.onerror = () => status(navigator.onLine ? "Could not load the wall photo." : "This wall's photo isn't saved on this device yet.");
       im.src = `${API}/photo/${w.wall_id}`;
-    } catch (err) { status(err.message); }
+    } catch (err) {
+      status(navigator.onLine ? err.message : 'This wall isn\'t saved on this device yet. Use "Save for offline" next time you\'re online.');
+    }
   }
 
   async function loadWalls() {
     const q = $("ws-search").value.trim();
     try {
-      const walls = await call("GET", "/api/walls" + (q ? "?q=" + encodeURIComponent(q) : ""));
+      let walls;
+      if (navigator.onLine) {
+        walls = await call("GET", "/api/walls" + (q ? "?q=" + encodeURIComponent(q) : ""));
+      } else {
+        const needle = q.toLowerCase();
+        walls = (await call("GET", "/api/walls")).filter((w) => !needle || `${w.name} ${w.venue}`.toLowerCase().includes(needle));
+      }
       const box = $("ws-walls"); box.innerHTML = "";
       walls.forEach((w) => {
         const el = document.createElement("div"); el.className = "ws-wall";
-        el.innerHTML = `<img loading="lazy" src="${API}/photo/${w.wall_id}" alt=""><div><b></b><br><span></span></div>`;
-        el.querySelector("b").textContent = w.name; el.querySelector("span").textContent = `${w.venue} · ${w.mode}`;
+        el.innerHTML = `<img loading="lazy" src="${API}/photo/${w.wall_id}" alt=""><div><b>${esc(w.name)}</b><br>${esc(w.venue)} · ${esc(w.mode)}
+          ${w.mine || w.review_status !== "approved" ? "<br>" + badge(w.review_status) : ""}</div>`;
         el.onclick = () => openWall(w);
         box.appendChild(el);
       });
-      if (!walls.length) box.textContent = "No saved walls yet.";
-    } catch (err) { $("ws-walls").textContent = "Could not load walls."; }
+      if (!walls.length) box.innerHTML = '<p class="ws-note">No walls yet.</p>';
+    } catch (err) { $("ws-walls").innerHTML = '<p class="ws-note">Could not load walls.</p>'; }
   }
   let t; $("ws-search").oninput = () => { clearTimeout(t); t = setTimeout(loadWalls, 300); };
-  loadWalls();
+
+  // ---------------------------------------------------------------- offline
+  function offlineStatus(text) { $("ws-offline-status").textContent = text || ""; }
+  $("ws-offline-save").onclick = async () => {
+    if (!("serviceWorker" in navigator) || !navigator.serviceWorker.controller) {
+      offlineStatus("Offline mode isn't active here yet. Reload the page once; it needs https (or localhost)."); return;
+    }
+    const btn = $("ws-offline-save"); btn.disabled = true;
+    try {
+      const walls = await call("GET", "/api/walls");
+      let done = 0, failed = 0;
+      for (const w of walls) {
+        try {
+          await Promise.all([call("GET", `/api/walls/${w.wall_id}/unity`),
+            fetch(`${API}/photo/${w.wall_id}`, { credentials: "same-origin" }).then((r) => { if (!r.ok) throw new Error(); })]);
+          done++;
+        } catch (e) { failed++; }
+        offlineStatus(`Saving walls for offline… ${done + failed}/${walls.length}`);
+      }
+      offlineStatus(failed ? `Saved ${done} walls (${failed} failed).` : `All ${done} walls are saved on this device.`);
+    } catch (err) { offlineStatus("Could not save walls: " + err.message); }
+    finally { btn.disabled = !navigator.onLine; }
+  };
+
+  function onNetworkChange() {
+    const off = !navigator.onLine;
+    $("ws-offline-note").style.display = off ? "" : "none";
+    $("ws-take").disabled = off; $("ws-cam-open").disabled = off; $("ws-offline-save").disabled = off;
+    if (off) stopCamera();
+    loadWalls();
+  }
+  window.addEventListener("online", onNetworkChange);
+  window.addEventListener("offline", onNetworkChange);
+  window.addEventListener("pagehide", stopCamera);
+  onNetworkChange();
 })();
 </script>
 {% endblock %}

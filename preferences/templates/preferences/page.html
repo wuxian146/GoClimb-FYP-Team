@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .pf-card { width: 100%; max-width: 640px; background: #fff; color: #1e293b; border-radius: 16px; padding: 22px; box-shadow: 0 4px 18px rgba(0,0,0,.1); align-self: flex-start; }
+  .pf-card h2 { margin: 0 0 4px; color: #0f172a; }
+  .pf-card p.sub { color: #64748b; margin: 0 0 16px; }
+  .pf-card h3 { margin: 18px 0 8px; font-size: 15px; color: #0f172a; }
+  .pf-select, .pf-input { width: 100%; padding: 11px; border: 1px solid #cbd5e1; border-radius: 12px; font-size: 15px; background: #fff; }
+  .pf-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pf-chip input { display: none; }
+  .pf-chip span { display: inline-block; padding: 9px 14px; border-radius: 999px; border: 1px solid #cbd5e1; cursor: pointer; font-size: 14px; user-select: none; }
+  .pf-chip input:checked + span { background: #2563eb; border-color: #2563eb; color: #fff; }
+  .pf-btn { border: 0; border-radius: 12px; padding: 12px 18px; font-size: 15px; background: #2563eb; color: #fff; cursor: pointer; margin-top: 20px; }
+  .pf-ok { background: #dcfce7; color: #166534; padding: 10px 12px; border-radius: 10px; margin-bottom: 10px; }
+  .pf-err { background: #fee2e2; color: #991b1b; padding: 10px 12px; border-radius: 10px; margin-bottom: 10px; }
+</style>
+<form method="post" class="pf-card">
+  {% csrf_token %}
+  <h2><i class="fas fa-sliders-h"></i> Your climbing preferences</h2>
+  <p class="sub">GoClimb uses these to suggest walls and routes that suit you. You can change them any time.</p>
+  {% if saved %}<div class="pf-ok"><i class="fas fa-check-circle"></i> Saved.</div>{% endif %}
+  {% if error %}<div class="pf-err">{{ error }}</div>{% endif %}
+
+  <h3>Region</h3>
+  <select class="pf-select" name="region" id="pf-region">
+    <option value="">Choose your region…</option>
+    {% for v, label in regions %}<option value="{{ v }}" {% if pref.region == v %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <input class="pf-input" name="region_other" id="pf-region-other" placeholder="Your city / country" value="{{ pref.region_other }}"
+         style="margin-top:8px;{% if pref.region != 'other' %}display:none{% endif %}">
+
+  <h3>Where do you climb?</h3>
+  <div class="pf-chips">
+    {% for v, label in environments %}<label class="pf-chip"><input type="radio" name="environment" value="{{ v }}" {% if pref.environment == v %}checked{% endif %}><span>{{ label }}</span></label>{% endfor %}
+  </div>
+
+  <h3>Holds you enjoy</h3>
+  <div class="pf-chips">
+    {% for v, label in hold_types %}<label class="pf-chip"><input type="checkbox" name="hold_types" value="{{ v }}" {% if v in pref.hold_types %}checked{% endif %}><span>{{ label }}</span></label>{% endfor %}
+  </div>
+
+  <h3>Climbing styles</h3>
+  <div class="pf-chips">
+    {% for v, label in styles %}<label class="pf-chip"><input type="checkbox" name="styles" value="{{ v }}" {% if v in pref.styles %}checked{% endif %}><span>{{ label }}</span></label>{% endfor %}
+  </div>
+
+  <button class="pf-btn" type="submit"><i class="fas fa-save"></i> Save preferences</button>
+</form>
+<script>
+  document.getElementById("pf-region").addEventListener("change", function () {
+    document.getElementById("pf-region-other").style.display = this.value === "other" ? "" : "none";
+  });
+</script>
+{% endblock %}

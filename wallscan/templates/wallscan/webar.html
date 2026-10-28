@@ -1,0 +1,257 @@
+{% comment %} Browser AR for computers (webcam) and phones without the app: recognises the scanned wall in the live
+   camera with OpenCV (ORB features + homography) and draws the route on it. Vuforia can't run in a browser;
+   this is the web equivalent for flat walls. Usage: GoClimbWebAR.start({ wallId, doc, img, routeIds }) {% endcomment %}
+<style>
+  .war { position: fixed; inset: 0; background: #000; z-index: 4000; display: none; }
+  .war video, .war canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .war video { object-fit: contain; }
+  .war .top { position: absolute; left: 0; right: 0; top: 0; padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 10px;
+              display: flex; justify-content: space-between; gap: 8px; align-items: center; background: linear-gradient(rgba(0,0,0,.65), transparent); }
+  .war .pill { background: rgba(15,23,42,.8); color: #fff; padding: 8px 12px; border-radius: 999px; font: 500 14px Poppins, system-ui, sans-serif; }
+  .war .pill.ok { background: rgba(22,163,74,.9); }
+  .war button { border: 0; border-radius: 999px; padding: 10px 14px; background: rgba(15,23,42,.8); color: #fff; font-size: 15px; cursor: pointer; }
+  .war .bottom { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 12px calc(14px + env(safe-area-inset-bottom, 0px));
+                 text-align: center; color: #e2e8f0; font: 13px Poppins, system-ui, sans-serif; background: linear-gradient(transparent, rgba(0,0,0,.65)); }
+  .war .ref { position: absolute; right: 12px; bottom: 60px; width: 22vw; max-width: 160px; border-radius: 10px; border: 2px solid rgba(255,255,255,.7); opacity: .85; }
+</style>
+<div class="war" id="war">
+  <video id="war-video" playsinline muted autoplay></video>
+  <canvas id="war-canvas"></canvas>
+  <img class="ref" id="war-ref" alt="">
+  <div class="top">
+    <span class="pill" id="war-status">Starting…</span>
+    <div style="display:flex;gap:8px">
+      <button id="war-flip" title="Switch camera"><i class="fas fa-sync-alt"></i></button>
+      <button id="war-close" title="Close"><i class="fas fa-times"></i></button>
+    </div>
+  </div>
+  <div class="bottom" id="war-hint">Point the camera at this wall (small picture). The route locks onto the real holds.</div>
+</div>
+<script>
+window.GoClimbWebAR = (function () {
+  // Try our own copy first (fast, no outside server, works offline), then public mirrors.
+  const CV_URLS = [
+    "/static/wallscan/opencv.js",
+    "https://docs.opencv.org/4.10.0/opencv.js",
+    "https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0-release.1/dist/opencv.js",
+  ];
+  const PALETTE = ["#f97316", "#22c55e", "#3b82f6", "#eab308", "#ec4899", "#14b8a6", "#a855f7", "#ef4444"];
+  const $ = (id) => document.getElementById(id);
+  let cvPromise = null, cv = null, ref = null, stream = null, running = false, busy = false;
+  let facing = "environment", opts = null, smooth = null, lostFrames = 0, lastSeen = 0;
+  const work = document.createElement("canvas");
+
+  function status(text, ok) { $("war-status").textContent = text; $("war-status").className = "pill" + (ok ? " ok" : ""); }
+
+  // ---------------------------------------------------------------- OpenCV.js (about 9 MB, cached for offline after the first time)
+  function loadFrom(url) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = url; s.async = true;
+      const timer = setTimeout(() => { s.remove(); reject(new Error("timeout")); }, 60000);
+      s.onerror = () => { clearTimeout(timer); s.remove(); reject(new Error("unavailable")); };
+      s.onload = () => {
+        clearTimeout(timer);
+        const c = window.cv;
+        if (!c) return reject(new Error("not OpenCV"));
+        if (c instanceof Promise) return c.then(resolve, reject);
+        if (c.Mat) return resolve(c);
+        c.onRuntimeInitialized = () => resolve(c);
+      };
+      document.head.appendChild(s);
+    });
+  }
+  function loadCv() {
+    if (cvPromise) return cvPromise;
+    cvPromise = (async () => {
+      if (window.cv && window.cv.Mat) return (cv = window.cv);
+      for (const url of CV_URLS) {
+        try {
+          status("Loading the AR engine… (" + (url.startsWith("http") ? new URL(url).hostname : "this website") + ")");
+          const c = await loadFrom(url);
+          cv = c; window.cv = c; return c;
+        } catch (e) { console.warn("OpenCV.js not loaded from", url, e.message); window.cv = undefined; }
+      }
+      cvPromise = null;
+      throw new Error("Couldn't load the AR engine. Ask the team to add wallscan/static/wallscan/opencv.js (see README).");
+    })();
+    return cvPromise;
+  }
+
+  // OpenCV.js builds differ slightly in which constructor arguments they accept: fall back to defaults
+  function makeOrb(n) { try { return new cv.ORB(n); } catch (e) { return new cv.ORB(); } }
+  function makeMatcher() { try { return new cv.BFMatcher(cv.NORM_HAMMING, false); } catch (e) { return new cv.BFMatcher(); } }
+
+  // ---------------------------------------------------------------- reference (the scanned wall photo)
+  function buildRef(img) {
+    const s = Math.min(1, 640 / Math.max(img.naturalWidth, img.naturalHeight));
+    work.width = Math.round(img.naturalWidth * s); work.height = Math.round(img.naturalHeight * s);
+    work.getContext("2d").drawImage(img, 0, 0, work.width, work.height);
+    const rgba = cv.imread(work), gray = new cv.Mat(), mask = new cv.Mat();
+    cv.cvtColor(rgba, gray, cv.COLOR_RGBA2GRAY);
+    const orb = makeOrb(1500), kp = new cv.KeyPointVector(), des = new cv.Mat();
+    orb.detectAndCompute(gray, mask, kp, des);
+    const pts = new Float32Array(kp.size() * 2);
+    for (let i = 0; i < kp.size(); i++) { const p = kp.get(i).pt; pts[2 * i] = p.x; pts[2 * i + 1] = p.y; }
+    rgba.delete(); gray.delete(); mask.delete(); kp.delete(); orb.delete();
+    return { des, pts, w: work.width, h: work.height, orb: makeOrb(700), matcher: makeMatcher() };
+  }
+  function freeRef() {
+    if (!ref) return;
+    try { ref.des.delete(); ref.orb.delete(); ref.matcher.delete(); } catch (e) {}
+    ref = null;
+  }
+
+  // ---------------------------------------------------------------- one camera frame -> homography (or null)
+  function track(video) {
+    const s = Math.min(1, 640 / Math.max(video.videoWidth, video.videoHeight));
+    work.width = Math.round(video.videoWidth * s); work.height = Math.round(video.videoHeight * s);
+    work.getContext("2d").drawImage(video, 0, 0, work.width, work.height);
+    const mats = [];
+    const keep = (m) => { mats.push(m); return m; };
+    try {
+      const rgba = keep(cv.imread(work)), gray = keep(new cv.Mat()), mask = keep(new cv.Mat());
+      cv.cvtColor(rgba, gray, cv.COLOR_RGBA2GRAY);
+      const kp = keep(new cv.KeyPointVector()), des = keep(new cv.Mat());
+      ref.orb.detectAndCompute(gray, mask, kp, des);
+      if (des.rows < 12) return null;
+      const knn = keep(new cv.DMatchVectorVector());
+      ref.matcher.knnMatch(ref.des, des, knn, 2);
+      const src = [], dst = [];
+      for (let i = 0; i < knn.size(); i++) {
+        const pair = knn.get(i);
+        if (pair.size() >= 2) {
+          const a = pair.get(0), b = pair.get(1);
+          if (a.distance < 0.75 * b.distance) {
+            src.push(ref.pts[2 * a.queryIdx], ref.pts[2 * a.queryIdx + 1]);
+            const p = kp.get(a.trainIdx).pt; dst.push(p.x / s, p.y / s);      // back to video pixels
+          }
+        }
+        pair.delete();
+      }
+      if (src.length / 2 < 12) return null;
+      const srcM = keep(cv.matFromArray(src.length / 2, 1, cv.CV_32FC2, src));
+      const dstM = keep(cv.matFromArray(dst.length / 2, 1, cv.CV_32FC2, dst));
+      const inl = keep(new cv.Mat());
+      const H = keep(cv.findHomography(srcM, dstM, cv.RANSAC, 5.0, inl));
+      if (H.empty() || H.rows !== 3 || cv.countNonZero(inl) < 12) return null;
+      return Array.from(H.data64F);
+    } finally {
+      mats.forEach((m) => { try { m.delete(); } catch (e) {} });
+    }
+  }
+
+  function project(Hm, x, y) {                       // reference px -> video px
+    const w = Hm[6] * x + Hm[7] * y + Hm[8];
+    return [(Hm[0] * x + Hm[1] * y + Hm[2]) / w, (Hm[3] * x + Hm[4] * y + Hm[5]) / w];
+  }
+  function plausible(Hm, vw, vh) {                   // reject twisted / tiny / huge detections
+    const c = [[0, 0], [ref.w, 0], [ref.w, ref.h], [0, ref.h]].map(([x, y]) => project(Hm, x, y));
+    let area = 0, sign = 0;
+    for (let i = 0; i < 4; i++) {
+      const [x1, y1] = c[i], [x2, y2] = c[(i + 1) % 4], [x3, y3] = c[(i + 2) % 4];
+      const cross = (x2 - x1) * (y3 - y2) - (y2 - y1) * (x3 - x2);
+      if (sign === 0) sign = Math.sign(cross); else if (Math.sign(cross) !== sign) return false;
+      area += x1 * y2 - x2 * y1;
+    }
+    area = Math.abs(area) / 2;
+    return area > vw * vh * 0.02 && area < vw * vh * 25;
+  }
+
+  // ---------------------------------------------------------------- drawing
+  function draw(Hm) {
+    const video = $("war-video"), canvas = $("war-canvas"), ctx = canvas.getContext("2d");
+    const cw = canvas.clientWidth, ch = canvas.clientHeight, dpr = window.devicePixelRatio || 1;
+    if (canvas.width !== Math.round(cw * dpr)) { canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr); }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cw, ch);
+    if (!Hm) return;
+    // video is drawn with object-fit: contain -> map video px to screen px
+    const k = Math.min(cw / video.videoWidth, ch / video.videoHeight);
+    const ox = (cw - video.videoWidth * k) / 2, oy = (ch - video.videoHeight * k) / 2;
+    const toScreen = (nx, ny) => { const [x, y] = project(Hm, nx * ref.w, ny * ref.h); return [ox + x * k, oy + y * k]; };
+    // wall outline
+    ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.lineWidth = 2;
+    ctx.beginPath(); [[0, 0], [1, 0], [1, 1], [0, 1]].forEach(([x, y], i) => { const [a, b] = toScreen(x, y); i ? ctx.lineTo(a, b) : ctx.moveTo(a, b); }); ctx.closePath(); ctx.stroke();
+    const holds = {}; (opts.doc.holds || []).forEach((h) => holds[h.id] = h);
+    const ids = opts.routeIds && opts.routeIds.length ? new Set(opts.routeIds) : null;
+    const routes = (opts.doc.routes || []).filter((r) => !ids || ids.has(r.id));
+    const scale = Math.max(5, Math.min(cw, ch) / 70);
+    routes.forEach((rt, i) => {
+      const pts = (rt.hold_ids || []).map((id) => holds[id]).filter(Boolean).map((h) => toScreen(h.x, h.y));
+      const color = rt.color || PALETTE[i % PALETTE.length];
+      ctx.lineWidth = scale * 0.7; ctx.lineJoin = "round"; ctx.strokeStyle = "rgba(0,0,0,.55)";
+      ctx.beginPath(); pts.forEach(([x, y], j) => j ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke();
+      ctx.lineWidth = scale * 0.45; ctx.strokeStyle = color;
+      ctx.beginPath(); pts.forEach(([x, y], j) => j ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke();
+      pts.forEach(([x, y], j) => {
+        ctx.beginPath(); ctx.arc(x, y, scale, 0, 7); ctx.fillStyle = color; ctx.fill();
+        ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.stroke();
+        if (routes.length === 1 || j === 0 || j === pts.length - 1) {
+          ctx.fillStyle = "#0f172a"; ctx.font = `bold ${Math.round(scale * 1.1)}px sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.fillText(j === 0 ? "S" : j === pts.length - 1 ? "T" : String(j + 1), x, y);
+        }
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------- loop
+  function loop() {
+    if (!running) return;
+    const video = $("war-video");
+    if (!busy && video.readyState >= 2 && video.videoWidth) {
+      busy = true;
+      let Hm = null;
+      try { Hm = track(video); } catch (e) { console.warn("WebAR frame failed", e); }
+      if (Hm && plausible(Hm, video.videoWidth, video.videoHeight)) {
+        smooth = smooth ? smooth.map((v, i) => v * 0.45 + Hm[i] * 0.55) : Hm;   // steadier overlay
+        lostFrames = 0; lastSeen = performance.now();
+        status("Tracking the wall", true);
+      } else if (++lostFrames > 6) {
+        smooth = null;
+        status(performance.now() - lastSeen > 2500 ? "Point the camera at the wall" : "Looking for the wall…");
+      }
+      draw(smooth);
+      busy = false;
+    }
+    requestAnimationFrame(loop);
+  }
+
+  async function openCamera() {
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    $("war-video").srcObject = stream;
+    await $("war-video").play().catch(() => {});
+  }
+
+  async function start(o) {
+    opts = o;
+    $("war").style.display = "block";
+    $("war-ref").src = o.img.src;
+    smooth = null; lostFrames = 0; lastSeen = performance.now();
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) || !window.isSecureContext) {
+      status("Camera needs https or localhost"); return;
+    }
+    try {
+      await loadCv();
+      status("Learning this wall…");
+      freeRef(); ref = buildRef(o.img);
+      if (ref.des.rows < 30) { status("This photo has too little detail to track"); return; }
+      status("Starting the camera…");
+      await openCamera();
+      running = true; requestAnimationFrame(loop);
+    } catch (e) { status(e.name === "NotAllowedError" ? "Camera permission was denied" : (e.message || "Couldn't start")); }
+  }
+
+  function stop() {
+    running = false;
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    stream = null; $("war").style.display = "none"; freeRef();
+  }
+
+  $("war-close").onclick = stop;
+  $("war-flip").onclick = async () => { facing = facing === "environment" ? "user" : "environment"; try { await openCamera(); } catch (e) { status("Couldn't switch camera"); } };
+  window.addEventListener("pagehide", stop);
+  return { start, stop, preload: () => loadCv().catch(() => {}) };
+})();
+</script>

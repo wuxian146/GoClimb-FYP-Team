@@ -1,0 +1,24 @@
+{# First-login question (after the experience level): region + interests. Included from base.html. #}
+{% if ask_climber_prefs %}
+<div id="pf-modal" style="position:fixed;inset:0;z-index:2900;display:grid;place-items:center;padding:16px;background:rgba(15,23,42,.7);backdrop-filter:blur(4px)">
+  <div style="width:100%;max-width:520px;max-height:90vh;overflow:auto;background:#fff;color:#1e293b;border-radius:18px;padding:24px;box-shadow:0 20px 45px rgba(0,0,0,.3)">
+    <h2 style="margin:0 0 4px;color:#172554"><i class="fas fa-map-marked-alt" style="color:#2563eb"></i> Tell us how you climb</h2>
+    <p style="color:#64748b;margin:0 0 6px">Takes 10 seconds. You can change it later in your profile.</p>
+    <a href="/profile/preferences/?next={{ request.path|urlencode }}" style="display:block;margin:14px 0;padding:13px;border-radius:12px;background:#2563eb;color:#fff;text-align:center;text-decoration:none;font-weight:500">
+      Choose region &amp; interests
+    </a>
+    <button type="button" id="pf-later" style="width:100%;padding:11px;border:0;border-radius:12px;background:#e2e8f0;color:#1e293b;cursor:pointer">Later</button>
+  </div>
+</div>
+<script>
+  (function () {
+    var key = "gc-prefs-later";
+    var modal = document.getElementById("pf-modal");
+    try { if (sessionStorage.getItem(key)) { modal.remove(); return; } } catch (e) {}
+    document.getElementById("pf-later").onclick = function () {
+      try { sessionStorage.setItem(key, "1"); } catch (e) {}
+      modal.remove();
+    };
+  })();
+</script>
+{% endif %}
