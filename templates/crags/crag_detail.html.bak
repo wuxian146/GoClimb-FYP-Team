@@ -1,0 +1,719 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<style>
+    body { background: #f1f5f9 !important; }
+    main { display: block !important; padding: 0 !important; }
+
+    .crag-hero {
+        height: 300px;
+        background: linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.7)),
+                    url('https://images.unsplash.com/photo-1522163182402-834f871fd851?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80') center/cover;
+        display: flex;
+        align-items: flex-end;
+        padding: 40px 10%;
+        color: white;
+    }
+    .back-btn {
+        display: inline-flex; align-items: center; gap: 8px;
+        color: white; text-decoration: none; font-size: 15px;
+        margin-bottom: 20px; background: rgba(255,255,255,0.2);
+        padding: 8px 16px; border-radius: 8px; backdrop-filter: blur(5px);
+        transition: background 0.3s;
+    }
+    .back-btn:hover { background: rgba(255,255,255,0.4); }
+    .crag-title h1 { font-size: 42px; font-weight: 600; margin-bottom: 10px; }
+    .crag-title p { font-size: 18px; opacity: 0.9; }
+
+    .content-container {
+        max-width: 1200px; margin: 40px auto; padding: 0 20px;
+        display: grid; grid-template-columns: 2fr 1fr; gap: 30px;
+    }
+    .info-card {
+        background: white; border-radius: 16px; padding: 30px;
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+        margin-bottom: 30px;
+    }
+    .info-card h3 {
+        color: #1e293b; font-size: 24px; margin-bottom: 20px;
+        border-bottom: 2px solid #e2e8f0; padding-bottom: 10px;
+    }
+    .desc-text { color: #475569; line-height: 1.7; margin-bottom: 20px; }
+
+    .weather-widget {
+        display: flex; align-items: center; gap: 20px;
+        background: #f8fafc; padding: 20px; border-radius: 12px;
+    }
+    .hazard-badge {
+        background: #22c55e; color: white; padding: 8px 16px;
+        border-radius: 20px; font-weight: 600; font-size: 14px;
+    }
+    .hazard-badge.caution { background: #f59e0b; }
+
+    .forecast-grid {
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+        margin-top: 18px;
+    }
+    .forecast-day {
+        background: #f8fafc; border-radius: 10px; padding: 14px 10px; text-align: center;
+    }
+    .forecast-day .day { font-weight: 600; color: #334155; font-size: 13px; }
+    .forecast-day .ico { font-size: 26px; color: #f59e0b; margin: 6px 0; }
+    .forecast-day .temps { font-size: 13px; color: #475569; }
+    .forecast-day .meta { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+
+    .route-item {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 15px 0; border-bottom: 1px solid #f1f5f9;
+    }
+    .route-info h4 { color: #334155; font-size: 18px; margin-bottom: 5px; }
+    .route-info span { color: #64748b; font-size: 14px; }
+    .route-grade {
+        background: #3b82f6; color: white; padding: 5px 12px;
+        border-radius: 6px; font-weight: bold; margin-left: 10px;
+    }
+    .ar-btn {
+        background: #8b5cf6; color: white; padding: 8px 15px; border: none;
+        border-radius: 6px; cursor: pointer; transition: background 0.3s;
+    }
+    .ar-btn:hover { background: #7c3aed; }
+
+    .action-btn {
+        display: block; width: 100%; text-align: center; padding: 14px;
+        border-radius: 8px; text-decoration: none; font-weight: bold;
+        font-size: 15px; transition: background 0.3s; margin-top: 12px;
+        border: none; cursor: pointer;
+    }
+    .btn-green { background: #10b981; color: white; }
+    .btn-green:hover { background: #059669; }
+    .btn-blue { background: #3b82f6; color: white; }
+    .btn-blue:hover { background: #2563eb; }
+    .btn-purple { background: #8b5cf6; color: white; }
+    .btn-purple:hover { background: #7c3aed; }
+    .btn-heart {
+        background: #fff; color: #ef4444; border: 2px solid #ef4444;
+    }
+    .btn-heart.active { background: #ef4444; color: #fff; }
+
+    /* AR Modal */
+    .ar-modal {
+        display: none; position: fixed; inset: 0; z-index: 1000;
+        background: rgba(0,0,0,0.9); padding: 16px;
+        align-items: center; justify-content: center;
+    }
+    .ar-modal.open { display: flex; }
+    .ar-box {
+        background: #0f172a; color: white; border-radius: 16px;
+        max-width: 1180px; width: 100%; padding: 24px; position: relative;
+    }
+    .ar-box h3 { font-size: 22px; margin-bottom: 6px; }
+    .ar-box .sub { opacity: 0.7; font-size: 14px; margin-bottom: 16px; }
+    /* Stage holds the live camera video + transparent 3D overlay */
+    #ar-stage {
+        position: relative; width: 100%; height: min(68vh, 680px); min-height: 520px;
+        background: #1e293b center/cover; border-radius: 12px; overflow: hidden;
+    }
+    #ar-video {
+        position: absolute; inset: 0; width: 100%; height: 100%;
+        object-fit: cover; display: none; transform: scaleX(-1);
+    }
+    #ar-video.live { display: block; }
+    #ar-canvas {
+        position: absolute; inset: 0; width: 100%; height: 100%;
+        border-radius: 12px; display: block;
+    }
+    .ar-controls { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+    .ar-controls button {
+        padding: 11px 16px; border-radius: 8px; border: none; cursor: pointer;
+        font-weight: 600; background: #3b82f6; color: white;
+    }
+    .ar-controls button.ghost { background: rgba(255,255,255,0.15); }
+    .ar-controls button.on { background: #22c55e; }
+    .ar-close {
+        position: absolute; top: 14px; right: 16px; background: none;
+        border: none; color: #cbd5e1; font-size: 26px; cursor: pointer;
+    }
+    .ar-hint {
+        margin-top: 14px; padding: 12px 16px; border-radius: 10px;
+        background: rgba(239,68,68,0.15); color: #fca5a5; font-size: 14px;
+        display: none;
+    }
+    .ar-hint.show { display: block; }
+    .ar-badge {
+        position: absolute; top: 10px; left: 10px; z-index: 5;
+        background: rgba(0,0,0,0.5); color: #fff; padding: 4px 10px;
+        border-radius: 20px; font-size: 12px; font-weight: 600; display: none;
+    }
+    .ar-badge.live { display: block; }
+
+    /* Second canvas used by AR.js (marker-tracked overlay) */
+    #ar-canvas-ar {
+        position: absolute; inset: 0; width: 100%; height: 100%;
+        border-radius: 12px; display: none;
+    }
+    .route-hud { position:absolute; inset:0; z-index:6; pointer-events:none; display:none; color:#fff; text-shadow:0 1px 3px #000; background:linear-gradient(180deg,rgba(3,10,18,.46),transparent 35%,rgba(3,10,18,.2) 60%,rgba(3,10,18,.74)); }
+    .route-hud.visible { display:block; }
+    .route-summary { position:absolute; top:14px; left:14px; font-weight:600; }
+    .route-summary strong { display:block; font-size:21px; } .route-summary span { font-size:14px; }
+    .route-svg { position:absolute; inset:58px 18% 100px; width:64%; height:calc(100% - 158px); overflow:visible; }
+    .route-line { fill:none; stroke:#55d7ff; stroke-width:6; stroke-linecap:round; stroke-linejoin:round; filter:drop-shadow(0 0 5px #0ea5e9); }
+    .hold-hand { fill:rgba(7,20,31,.55); stroke:#55d7ff; stroke-width:3; } .hold-foot { fill:rgba(7,20,31,.55); stroke:#ff8a3d; stroke-width:3; }
+    .hold-text { fill:#fff; font-weight:700; font-size:15px; text-anchor:middle; dominant-baseline:middle; }
+    .route-legend { position:absolute; bottom:61px; left:14px; right:14px; display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; }
+    .legend-hold { display:flex; gap:4px; align-items:center; } .legend-ring,.legend-square { width:17px;height:17px;border:2px solid #55d7ff;border-radius:50%; } .legend-square { border-color:#ff8a3d;border-radius:3px; }
+    .ar-pdf-controls { position:absolute; z-index:8; bottom:12px; left:14px; right:14px; display:flex; gap:10px; }
+    .ar-pdf-controls button { flex:1; border:1px solid rgba(255,255,255,.45); border-radius:8px; padding:11px; cursor:pointer; font-weight:700; font-size:14px; }
+    .ar-pdf-controls .start { background:#56c9ed; color:#062031; border-color:#56c9ed; } .ar-pdf-controls .details { background:rgba(24,31,40,.72); color:#fff; }
+    #ar-stage.route-active .route-line { stroke-dasharray:250; stroke-dashoffset:250; animation: trace-route 2.2s ease-out forwards; } @keyframes trace-route { to { stroke-dashoffset:0; } }
+    .ghost-btn {
+        padding: 11px 16px; border-radius: 8px; border: none; cursor: pointer;
+        font-weight: 600; background: rgba(255,255,255,0.15); color: white;
+        text-decoration: none; display: inline-flex; align-items: center; gap: 8px;
+    }
+    .marker-modal {
+        display: none; position: fixed; inset: 0; z-index: 1100;
+        background: rgba(0,0,0,0.85); padding: 30px;
+        align-items: center; justify-content: center;
+    }
+    .marker-modal.open { display: flex; }
+    .marker-box {
+        background: #0f172a; color: white; border-radius: 16px;
+        max-width: 420px; width: 100%; padding: 24px; position: relative; text-align: center;
+    }
+    .marker-box h3 { font-size: 22px; margin-bottom: 6px; }
+    .marker-box .sub { opacity: 0.7; font-size: 14px; margin-bottom: 16px; }
+    .marker-img {
+        width: 220px; max-width: 100%; border: 10px solid #fff;
+        border-radius: 8px; background: #fff;
+    }
+
+    @media (max-width: 800px) {
+        .content-container { grid-template-columns: 1fr; }
+        #ar-stage { height: 68vh; min-height: 430px; }
+        .route-svg { left:12%; right:12%; width:76%; }
+    }
+</style>
+
+<div style="background: white; padding: 15px 5%; border-bottom: 1px solid #e2e8f0; width: 100%;">
+    <a href="/search/" style="color: #3b82f6; text-decoration: none; font-weight: 600; font-size: 16px; display: inline-flex; align-items: center; gap: 8px;">
+        <i class="fas fa-arrow-left"></i> Back to Search
+    </a>
+</div>
+
+<div class="crag-hero"{% if crag.image %} style="background-image:linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.7)),url('{{ crag.image }}');"{% endif %}>
+    <div class="crag-title">
+        <h1>{{ crag.name }}</h1>
+        <p><i class="fas fa-mountain"></i> {{ crag.get_rock_type_display }}</p>
+    </div>
+</div>
+
+<div class="content-container">
+    <div class="left-col">
+        <div class="info-card">
+            <h3>About this crag</h3>
+            <p class="desc-text">{{ crag.description }}</p>
+            <div style="display:flex; gap:20px; flex-wrap:wrap; color:#475569; font-size:14px; margin-bottom: 16px;">
+                <span><i class="fas fa-ruler-vertical"></i> Max ~{{ crag.length_m }} m</span>
+                <span><i class="fas fa-chart-line"></i> Grades {{ crag.difficulty_min }}–{{ crag.difficulty_max }}</span>
+                <span><i class="fas fa-route"></i> {{ crag.routes.count }} routes</span>
+            </div>
+            {% if crag.hazards %}
+            <div style="background:#fff7ed; border-left:4px solid #f59e0b; padding:12px 16px; border-radius:8px; color:#9a3412; font-size:14px; line-height:1.5;">
+                <i class="fas fa-exclamation-triangle"></i> <strong>Hazards:</strong> {{ crag.hazards }}
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="info-card">
+            <h3>Climbing Routes</h3>
+            {% for route in crag.routes.all %}
+            <div class="route-item">
+                <div class="route-info">
+                    <h4>{{ route.name }}</h4>
+                    <span>{{ route.get_route_type_display }} • {{ route.length_m }} m{% if route.description %} • {{ route.description }}{% endif %}</span>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    {% if request.user.is_authenticated %}
+                    <button class="ar-btn" onclick="openAR('{{ route.name|escapejs }}')"><i class="fas fa-vr-cardboard"></i> AR</button>
+                    {% endif %}
+                    <span class="route-grade">{{ route.grade }}</span>
+                </div>
+            </div>
+            {% empty %}
+            <p style="color:#94a3b8;">No routes recorded yet.</p>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="right-col">
+        <div class="info-card">
+            <h3>Current Conditions</h3>
+            <div class="weather-widget" id="weather-current">
+                <i class="fas fa-spinner fa-spin" style="font-size: 40px; color: #94a3b8;"></i>
+                <div><h4 style="font-size: 22px; margin: 0;">…</h4><p style="color:#64748b; margin: 0;">Loading weather</p></div>
+            </div>
+
+            <div class="forecast-grid" id="weather-forecast"></div>
+
+            <div style="margin-top: 20px;">
+                <p style="margin-bottom: 10px; font-weight: 600;">Safety Status:</p>
+                <span class="hazard-badge" id="hazard-badge"><i class="fas fa-spinner fa-spin"></i> …</span>
+            </div>
+
+            <button class="action-btn btn-heart" id="fav-btn">
+                <i class="fas fa-heart"></i> <span id="fav-text">Save to Favorites</span>
+            </button>
+            <a class="action-btn btn-blue" id="transport-btn" href="#" target="_blank" rel="noopener">
+                <i class="fas fa-directions"></i> Get Directions (Google Maps)
+            </a>
+            {% if request.user.is_authenticated %}
+            <a class="action-btn btn-green" href="/crag/{{ crag.id }}/schedule/">
+                <i class="far fa-calendar-plus"></i> Schedule a Climb Here
+            </a>
+            {% endif %}
+            <a class="action-btn btn-purple" href="/forum/?crag={{ crag.slug }}">
+                <i class="fas fa-comments"></i> Discuss this Crag
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- AR Modal (Live camera + 3D route overlay) -->
+<div class="ar-modal" id="ar-modal">
+    <div class="ar-box">
+        <button class="ar-close" onclick="closeAR()">&times;</button>
+        <h3><i class="fas fa-vr-cardboard"></i> AR Climb Mode</h3>
+        <p class="sub">Route: <strong id="ar-route-name">—</strong></p>
+        <div id="ar-stage">
+            <span class="ar-badge" id="ar-badge"><i class="fas fa-circle" style="color:#22c55e;font-size:9px;"></i> LIVE</span>
+            <video id="ar-video" autoplay playsinline muted></video>
+            <canvas id="ar-canvas"></canvas>
+            <canvas id="ar-canvas-ar"></canvas>
+            <div class="route-hud" id="route-hud" aria-label="Route guidance overlay">
+                <div class="route-summary"><strong id="hud-route-name">Route</strong><span id="hud-route-meta">Grade - 20 min</span></div>
+                <svg class="route-svg" viewBox="0 0 100 200" preserveAspectRatio="none" aria-hidden="true">
+                    <path class="route-line" d="M50 195 C43 164 58 142 49 110 S42 65 57 7" />
+                    <circle class="hold-hand" cx="49" cy="38" r="9"/><text class="hold-text" x="49" y="38">H</text>
+                    <rect class="hold-foot" x="52" y="69" width="16" height="16" rx="2"/><text class="hold-text" x="60" y="77">F</text>
+                    <circle class="hold-hand" cx="47" cy="105" r="9"/><text class="hold-text" x="47" y="105">H</text>
+                    <rect class="hold-foot" x="35" y="132" width="16" height="16" rx="2"/><text class="hold-text" x="43" y="140">F</text>
+                    <circle class="hold-hand" cx="46" cy="165" r="9"/><text class="hold-text" x="46" y="165">H</text>
+                </svg>
+                <div class="route-legend"><span class="legend-hold"><i class="legend-ring"></i> Hand holds</span><span class="legend-hold"><i class="legend-square"></i> Foot holds</span><span>▲ easier &nbsp; ◆ moderate &nbsp; ▼ hard</span></div>
+            </div>
+            <div class="ar-pdf-controls">
+                <button class="start" id="start-route-btn" onclick="startRouteGuide()">Start Route</button>
+                <button class="details" onclick="showRouteDetails()">Details</button>
+            </div>
+        </div>
+        <div class="ar-hint" id="ar-hint">
+            <i class="fas fa-video"></i> Camera blocked, or no Hiro marker in view. Open this page via <b>http://127.0.0.1:8000</b>, allow camera, and point it at the <a href="#" onclick="showMarker();return false;" style="color:#fca5a5;text-decoration:underline;">Hiro marker</a>. The 3D route locks onto the marker and stays glued to it.
+        </div>
+        <div class="ar-controls">
+            <button id="cam-btn" onclick="toggleCamera()"><i class="fas fa-camera"></i> Start AR Camera</button>
+            <button class="ghost" id="wall-btn" onclick="toggleWall()"><i class="fas fa-cube"></i> Hide Wall</button>
+            <button class="ghost" onclick="toggleThreeD()"><i class="fas fa-sync"></i> Spin</button>
+            <button class="ghost" onclick="captureAR()"><i class="fas fa-camera-retro"></i> Capture</button>
+            <button class="ghost" onclick="showMarker()"><i class="fas fa-qrcode"></i> Show Marker</button>
+            <button class="ghost" onclick="closeAR()">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Hiro Marker preview / print modal -->
+<div class="marker-modal" id="marker-modal">
+    <div class="marker-box">
+        <button class="ar-close" onclick="closeMarker()">&times;</button>
+        <h3><i class="fas fa-qrcode"></i> Hiro Marker</h3>
+        <p class="sub">Point your camera at this marker (show it on another screen, or print it). The 3D route will lock onto the marker and stay anchored to it as you move around.</p>
+        <img src="/ar-assets/HIRO.jpg" alt="Hiro marker" class="marker-img" />
+        <div class="ar-controls" style="margin-top:16px;justify-content:center;">
+            <a class="ghost-btn" href="/ar-assets/HIRO.jpg" download><i class="fas fa-download"></i> Download / Print</a>
+            <button class="ghost" onclick="closeMarker()">Close</button>
+        </div>
+    </div>
+</div>
+
+<script src="/ar-assets/vendor/three.min.js"></script>
+<script src="/ar-assets/vendor/ar-threex.js"></script>
+<script>
+    window.__isAuthenticated = {{ request.user.is_authenticated|yesno:"true,false" }};
+    var CRAG = {{ crag_json|safe }};
+    var THREE_READY = typeof THREE !== 'undefined';
+
+    function getCookie(name) {
+        var m = document.cookie.match('(^|; )' + name + '=([^;]*)');
+        return m ? decodeURIComponent(m[2]) : null;
+    }
+    function escapeHtml(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+            return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+        });
+    }
+
+    // Distinct illustrative profiles for each crag. They are route-planning
+    // visuals rather than a survey of the physical wall.
+    var ROUTE_GUIDES = {
+        'boulder-the-chevrons': [[51,184,'F'],[48,151,'H'],[55,121,'F'],[43,91,'H'],[52,56,'F'],[46,22,'H']],
+        'bukit-timah-nature-reserve': [[43,184,'F'],[50,153,'F'],[58,124,'H'],[49,94,'F'],[39,61,'F'],[52,27,'H']],
+        'climb-central': [[54,184,'F'],[47,151,'H'],[56,119,'F'],[46,88,'H'],[53,55,'F'],[49,22,'H']],
+        'dairy-farm-quarry': [[47,184,'F'],[56,151,'H'],[45,120,'F'],[54,91,'H'],[43,59,'F'],[51,24,'H']],
+        'kinetics-climbing': [[59,184,'F'],[50,154,'F'],[41,124,'H'],[50,94,'F'],[59,62,'F'],[45,25,'H']],
+        'mandai-rock': [[44,184,'F'],[39,151,'H'],[48,121,'F'],[57,90,'H'],[48,57,'F'],[52,23,'H']],
+        'onsight-climbing-gym': [[56,184,'F'],[50,153,'F'],[43,121,'H'],[54,91,'F'],[60,60,'H'],[50,24,'F']],
+        'pulau-ubin-granite': [[43,184,'F'],[51,152,'H'],[59,119,'F'],[49,87,'F'],[39,55,'H'],[51,22,'F']],
+        'the-cliff-snow-city': [[54,184,'F'],[46,151,'H'],[53,119,'F'],[46,87,'H'],[54,54,'F'],[49,22,'H']]
+    };
+    function drawGuideForCrag(routeName) {
+        var baseGuide = ROUTE_GUIDES[CRAG.slug] || ROUTE_GUIDES['climb-central'];
+        // Retain the crag's profile, then make every named route its own
+        // variation. Every H/F marker is generated from the same points as the
+        // line, so markers can never appear off the displayed route.
+        var routeKey = String(routeName || 'route');
+        var routeSeed = routeKey.split('').reduce(function (sum, character) {
+            return sum + character.charCodeAt(0);
+        }, 0);
+        var guide = baseGuide.map(function (point, index) {
+            var offset = ((routeSeed + index * 11) % 13) - 6;
+            var holdType = point[2];
+            // Different routes also have a slightly different hand/foot mix.
+            if ((routeSeed + index * 5) % 7 === 0) holdType = holdType === 'H' ? 'F' : 'H';
+            return [Math.max(20, Math.min(80, point[0] + offset)), point[1], holdType];
+        });
+        function hand(p) { return '<circle class="hold-hand" cx="'+p[0]+'" cy="'+p[1]+'" r="9"/><text class="hold-text" x="'+p[0]+'" y="'+p[1]+'">H</text>'; }
+        function foot(p) { return '<rect class="hold-foot" x="'+(p[0]-8)+'" y="'+(p[1]-8)+'" width="16" height="16" rx="2"/><text class="hold-text" x="'+p[0]+'" y="'+p[1]+'">F</text>'; }
+        var path = 'M' + guide.map(function (p) { return p[0] + ' ' + p[1]; }).join(' L');
+        document.querySelector('.route-svg').innerHTML = '<path class="route-line" d="'+path+'" />' + guide.filter(function (p) { return p[2] === 'H'; }).map(hand).join('') + guide.filter(function (p) { return p[2] === 'F'; }).map(foot).join('');
+    }
+
+    // ---- Weather ----
+    fetch('/api/crags/' + CRAG.id + '/weather/', { credentials: 'include' })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            var w = data.results;
+            document.getElementById('weather-current').innerHTML =
+                '<i class="fas ' + w.current.icon + '" style="font-size:40px; color:#f59e0b;"></i>' +
+                '<div><h4 style="font-size:22px; margin:0;">' + w.current.temperature + '°C</h4>' +
+                '<p style="color:#64748b; margin:0;">' + w.current.condition + '</p></div>';
+            var hb = document.getElementById('hazard-badge');
+            hb.className = 'hazard-badge' + (w.hazard_status === 'Safe to Climb' ? '' : ' caution');
+            hb.innerHTML = '<i class="fas fa-' + (w.hazard_status === 'Safe to Climb' ? 'check-circle' : 'exclamation-triangle') + '"></i> ' + w.hazard_status;
+            var fg = document.getElementById('weather-forecast');
+            fg.innerHTML = '';
+            w.forecast.forEach(function (d) {
+                fg.innerHTML +=
+                    '<div class="forecast-day">' +
+                    '<div class="day">' + d.date + '</div>' +
+                    '<div class="ico"><i class="fas ' + d.icon + '"></i></div>' +
+                    '<div class="temps">' + d.temp_high + '° / ' + d.temp_low + '°</div>' +
+                    '<div class="meta">💧 ' + d.rainfall_mm + 'mm · 💨 ' + d.wind_kmh + 'km/h</div>' +
+                    '</div>';
+            });
+        })
+        .catch(function () {
+            document.getElementById('weather-current').innerHTML =
+                '<i class="fas fa-cloud" style="font-size:40px;color:#94a3b8;"></i><div><h4 style="font-size:18px;margin:0;">Mock weather unavailable</h4></div>';
+        });
+
+    // ---- Transport ----
+    document.getElementById('transport-btn').href =
+        'https://www.google.com/maps/dir/?api=1&destination=' + CRAG.lat + ',' + CRAG.lng;
+
+    // ---- Favorite ----
+    var favBtn = document.getElementById('fav-btn');
+    function renderFav(isFav) {
+        favBtn.classList.toggle('active', isFav);
+        document.getElementById('fav-text').textContent = isFav ? 'Saved ✓' : 'Save to Favorites';
+    }
+    renderFav(!!CRAG.is_favorite);
+    favBtn.addEventListener('click', function () {
+        if (!window.__isAuthenticated) { window.location.href = '/login/'; return; }
+        var isFav = favBtn.classList.contains('active');
+        var url = isFav ? ('/api/favorites/' + CRAG.id + '/') : '/api/favorites/';
+        fetch(url, {
+            method: isFav ? 'DELETE' : 'POST',
+            credentials: 'include',
+            headers: { 'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/json' },
+            body: isFav ? null : JSON.stringify({ crag_id: CRAG.id })
+        }).then(function (r) {
+            if (r.status === 401) { window.location.href = '/login/'; return; }
+            renderFav(!isFav);
+        });
+    });
+
+    // ---- AR Modal: marker-based tracking via AR.js (THREEx) ----
+    var AR_BASE = '/ar-assets/';
+    var arReady = (typeof THREEx !== 'undefined');
+    var wallMesh = null, rotating = false;
+
+    // preview (no camera) / fallback (THREEx missing) state
+    var previewRenderer = null, previewScene = null, previewCamera = null, routeGroup = null;
+    var fbStream = null, fbLive = false;
+
+    // AR (THREEx) state
+    var arRunning = false, arActive = false;
+    var arRenderer = null, arScene = null, arCamera = null;
+    var arMarkerRoot = null, arToolkitSource = null, arToolkitContext = null, arMarkerControls = null;
+
+    function buildRouteObject(parent) {
+        var g = new THREE.Group();
+        wallMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(4, 5, 0.3),
+            new THREE.MeshStandardMaterial({ color: 0x94a3b8 })
+        );
+        g.add(wallMesh);
+        g.add(new THREE.AmbientLight(0xffffff, 0.7));
+        var dl = new THREE.DirectionalLight(0xffffff, 0.8);
+        dl.position.set(3, 5, 5); g.add(dl);
+        var colors = [0xef4444, 0x22c55e, 0x3b82f6];
+        colors.forEach(function (col, i) {
+            var pts = [];
+            for (var t = 0; t <= 1; t += 0.1) {
+                pts.push(new THREE.Vector3(
+                    -1.5 + i * 1.5 + Math.sin(t * 3 + i) * 0.4,
+                    -2.2 + t * 4.4,
+                    0.2 + Math.cos(t * 3 + i) * 0.2));
+            }
+            var line = new THREE.Line(
+                new THREE.BufferGeometry().setFromPoints(pts),
+                new THREE.LineBasicMaterial({ color: col, linewidth: 3 }));
+            g.add(line);
+            pts.forEach(function (p) {
+                var hold = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8),
+                    new THREE.MeshStandardMaterial({ color: col }));
+                hold.position.copy(p); g.add(hold);
+            });
+        });
+        parent.add(g);
+        return g;
+    }
+
+    // Floating 3D preview shown before the camera starts (works without a marker).
+    function initPreview() {
+        if (previewRenderer) return;
+        var canvas = document.getElementById('ar-canvas');
+        previewRenderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+        previewRenderer.setClearColor(0x000000, 0);
+        previewRenderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
+        previewScene = new THREE.Scene();
+        previewCamera = new THREE.PerspectiveCamera(50, canvas.clientWidth / canvas.clientHeight, 0.1, 100);
+        previewCamera.position.set(0, 0, 6);
+        routeGroup = buildRouteObject(previewScene);
+        (function animate() {
+            requestAnimationFrame(animate);
+            if (rotating && routeGroup) routeGroup.rotation.y += 0.01;
+            previewRenderer.render(previewScene, previewCamera);
+        })();
+    }
+
+    function openAR(routeName) {
+        if (!window.__isAuthenticated) {
+            window.location.href = '/login/?next=' + encodeURIComponent(window.location.pathname);
+            return;
+        }
+        document.getElementById('ar-route-name').textContent = routeName || '—';
+        var route = (CRAG.routes || []).filter(function (r) { return r.name === routeName; })[0] || {};
+        var minutes = Math.max(10, Math.round((route.length_m || CRAG.length_m || 10) * (route.route_type === 'boulder' ? 3 : 2)));
+        document.getElementById('hud-route-name').textContent = routeName || 'Route';
+        document.getElementById('hud-route-meta').textContent = (route.grade || CRAG.difficulty_min || '—') + ' • ' + minutes + ' min';
+        document.getElementById('route-hud').classList.add('visible');
+        document.getElementById('ar-stage').style.backgroundImage =
+            'linear-gradient(rgba(0,0,0,.12),rgba(0,0,0,.25)),url("' + encodeURI(CRAG.image || '') + '")';
+        document.getElementById('ar-stage').classList.remove('route-active');
+        document.getElementById('start-route-btn').textContent = 'Start Route';
+        drawGuideForCrag(routeName);
+        document.getElementById('ar-modal').classList.add('open');
+        // The guide itself is the AR surface: it opens instantly without requiring
+        // a marker, camera permission or an external 3D scene.
+        document.getElementById('ar-hint').classList.remove('show');
+    }
+
+    function closeAR() {
+        document.getElementById('ar-modal').classList.remove('open');
+        document.getElementById('route-hud').classList.remove('visible');
+        document.getElementById('ar-stage').classList.remove('route-active');
+        rotating = false;
+        stopCamera();
+    }
+
+    // ---- Start / Stop: uses AR.js when available, else plain camera fallback ----
+    function toggleCamera() {
+        if (arActive || fbLive) { stopCamera(); return; }
+        if (arReady) startAR(); else startFallbackCamera();
+    }
+
+    function startAR() {
+        var stage = document.getElementById('ar-stage');
+        document.getElementById('ar-canvas').style.display = 'none';
+        var arCanvas = document.getElementById('ar-canvas-ar');
+        arCanvas.style.display = 'block';
+        arRenderer = new THREE.WebGLRenderer({ canvas: arCanvas, antialias: true, alpha: true });
+        arRenderer.setClearColor(new THREE.Color('lightgrey'), 0);
+        arRenderer.setSize(stage.clientWidth, stage.clientHeight);
+        arScene = new THREE.Scene();
+        arCamera = new THREE.Camera();
+
+        arToolkitSource = new THREEx.ArToolkitSource({ sourceType: 'webcam' });
+        arToolkitSource.init(function onReady() {
+            var v = arToolkitSource.domElement;
+            v.style.position = 'absolute';
+            v.style.top = '0'; v.style.left = '0';
+            v.style.width = '100%'; v.style.height = '100%';
+            v.style.objectFit = 'cover';
+            stage.insertBefore(v, stage.firstChild);
+            setTimeout(onResizeAR, 250);
+            document.getElementById('ar-badge').classList.add('live');
+        });
+
+        arToolkitContext = new THREEx.ArToolkitContext({
+            cameraParametersUrl: AR_BASE + 'camera_para.dat',
+            detectionMode: 'mono'
+        });
+        arToolkitContext.init(function onCompleted() {
+            arCamera.projectionMatrix.copy(arToolkitContext.getProjectionMatrix());
+        });
+
+        arMarkerRoot = new THREE.Group();
+        arScene.add(arMarkerRoot);
+        arMarkerControls = new THREEx.ArMarkerControls(arToolkitContext, arMarkerRoot, {
+            type: 'pattern', patternUrl: AR_BASE + 'patt.hiro'
+        });
+        arMarkerControls.addEventListener('markerFound', function () {
+            document.getElementById('ar-hint').classList.remove('show');
+        });
+        buildRouteObject(arMarkerRoot);
+        setArWall(false); // hide virtual wall so the route overlays the real scene
+
+        arRunning = true; arActive = true;
+        var camBtn = document.getElementById('cam-btn');
+        camBtn.innerHTML = '<i class="fas fa-stop"></i> Stop Camera';
+        camBtn.classList.add('on');
+
+        (function animate() {
+            if (!arRunning) return;
+            requestAnimationFrame(animate);
+            if (arToolkitSource.ready === false) return;
+            arToolkitContext.update(arToolkitSource.domElement);
+            arRenderer.render(arScene, arCamera);
+        })();
+    }
+
+    function onResizeAR() {
+        if (!arToolkitSource || !arRenderer) return;
+        arToolkitSource.onResizeElement();
+        arToolkitSource.copyElementSizeTo(arRenderer.domElement);
+        if (arToolkitContext && arToolkitContext.arController) {
+            arToolkitContext.arController.copyVideoViewportSizeTo(arToolkitSource.domElement);
+        }
+    }
+
+    function stopCamera() {
+        // AR.js teardown
+        arRunning = false; arActive = false;
+        if (arToolkitSource && arToolkitSource.domElement) {
+            var v = arToolkitSource.domElement;
+            if (v.srcObject) v.srcObject.getTracks().forEach(function (t) { t.stop(); });
+            if (v.parentNode) v.parentNode.removeChild(v);
+        }
+        arToolkitSource = null; arToolkitContext = null; arMarkerControls = null;
+        document.getElementById('ar-canvas-ar').style.display = 'none';
+        document.getElementById('ar-canvas').style.display = 'block';
+        document.getElementById('ar-badge').classList.remove('live');
+        arRenderer = null; arScene = null; arCamera = null;
+        arMarkerRoot = null;
+        // Fallback teardown
+        stopFallbackCamera();
+        var camBtn = document.getElementById('cam-btn');
+        camBtn.innerHTML = '<i class="fas fa-camera"></i> Start AR Camera';
+        camBtn.classList.remove('on');
+        setArWall(true);
+    }
+
+    // ---- Fallback: plain live camera + floating route (when AR.js is unavailable) ----
+    function startFallbackCamera() {
+        var video = document.getElementById('ar-video');
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            document.getElementById('ar-hint').classList.add('show');
+            return;
+        }
+        initPreview();
+        document.getElementById('ar-canvas').style.display = 'block';
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+            .then(function (stream) {
+                fbStream = stream;
+                video.srcObject = stream;
+                video.classList.add('live');
+                fbLive = true;
+                document.getElementById('ar-badge').classList.add('live');
+                var btn = document.getElementById('cam-btn');
+                btn.innerHTML = '<i class="fas fa-stop"></i> Stop Camera';
+                btn.classList.add('on');
+                if (wallMesh) wallMesh.visible = false;
+                document.getElementById('wall-btn').innerHTML = '<i class="fas fa-cube"></i> Show Wall';
+                document.getElementById('ar-hint').classList.remove('show');
+            })
+            .catch(function (err) {
+                console.warn('Camera error:', err);
+                document.getElementById('ar-hint').classList.add('show');
+            });
+    }
+
+    function stopFallbackCamera() {
+        if (fbStream) { fbStream.getTracks().forEach(function (t) { t.stop(); }); fbStream = null; }
+        var video = document.getElementById('ar-video');
+        video.classList.remove('live');
+        video.srcObject = null;
+        fbLive = false;
+        if (wallMesh) wallMesh.visible = true;
+        document.getElementById('wall-btn').innerHTML = '<i class="fas fa-cube"></i> Hide Wall';
+    }
+
+    function setArWall(visible) {
+        if (wallMesh) wallMesh.visible = visible;
+        document.getElementById('wall-btn').innerHTML = visible
+            ? '<i class="fas fa-cube"></i> Hide Wall'
+            : '<i class="fas fa-cube"></i> Show Wall';
+    }
+    function toggleWall() { setArWall(!(wallMesh && wallMesh.visible)); }
+    function toggleThreeD() { rotating = !rotating; }
+
+    // PDF-style route guide controls. These deliberately work without camera permission.
+    function startRouteGuide() {
+        var stage = document.getElementById('ar-stage');
+        stage.classList.remove('route-active');
+        void stage.offsetWidth;
+        stage.classList.add('route-active');
+        document.getElementById('start-route-btn').textContent = 'Route Active ✓';
+    }
+    function showRouteDetails() {
+        var route = document.getElementById('hud-route-name').textContent;
+        var meta = document.getElementById('hud-route-meta').textContent;
+        alert(route + '\n' + meta + '\n\nCyan line: intended sequence\nH: hand hold\nF: foot hold\n\nThis is a visual planning guide - inspect the wall and climb within your ability.');
+    }
+
+    function captureAR() {
+        var stage = document.getElementById('ar-stage');
+        var tmp = document.createElement('canvas');
+        tmp.width = stage.clientWidth; tmp.height = stage.clientHeight;
+        var ctx = tmp.getContext('2d');
+        var video = (arActive && arToolkitSource) ? arToolkitSource.domElement : document.getElementById('ar-video');
+        if ((arActive || fbLive) && video && video.videoWidth) {
+            if (fbLive) { ctx.save(); ctx.translate(tmp.width, 0); ctx.scale(-1, 1); }
+            ctx.drawImage(video, 0, 0, tmp.width, tmp.height);
+            if (fbLive) ctx.restore();
+        } else {
+            ctx.fillStyle = '#1e293b'; ctx.fillRect(0, 0, tmp.width, tmp.height);
+        }
+        var ov = arActive ? document.getElementById('ar-canvas-ar') : document.getElementById('ar-canvas');
+        if (ov) ctx.drawImage(ov, 0, 0, tmp.width, tmp.height);
+        var link = document.createElement('a');
+        link.download = 'go-climb-ar-' + Date.now() + '.png';
+        link.href = tmp.toDataURL('image/png');
+        link.click();
+    }
+
+    // ---- Marker preview / print modal ----
+    function showMarker() { document.getElementById('marker-modal').classList.add('open'); }
+    function closeMarker() { document.getElementById('marker-modal').classList.remove('open'); }
+</script>
+{% endblock %}

@@ -61,6 +61,9 @@ INSTALLED_APPS = [
     'climbing.apps.ClimbingConfig',
     'rest_framework',
     'wallscan',          # GoClimbAR wall scanning (web + Unity API under /ar/)
+    'pwa',               # installable app + offline support (manifest, service worker)
+    'preferences',       # climber region + hold/style interests
+    'community',         # posts with places, friends, booked climbs + calendar
 ]
 
 MIDDLEWARE = [
@@ -88,6 +91,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'preferences.context_processors.climber_preferences',
             ],
         },
     },
@@ -170,6 +174,11 @@ GOCLIMB_AR_UNITY_EXPORT = Path(os.environ.get('GOCLIMB_AR_UNITY_EXPORT', BASE_DI
 GOCLIMB_AR_ADMIN_TOKEN = os.environ.get('GOCLIMB_ADMIN_TOKEN', '')
 # Wall photos are sent as base64 JSON, larger than Django's 2.5 MB default.
 DATA_UPLOAD_MAX_MEMORY_SIZE = 40 * 1024 * 1024
+# "Open in AR camera" (website -> GoClimbAR Unity app with Vuforia).
+# Where people download the app if it isn't installed (e.g. a GitHub release APK link).
+GOCLIMB_AR_APP_URL = os.environ.get('GOCLIMB_AR_APP_URL', '')
+# Android package name of the app (Unity: Player > Other Settings > Package Name). Optional.
+GOCLIMB_AR_ANDROID_PACKAGE = os.environ.get('GOCLIMB_AR_ANDROID_PACKAGE', '')
 
 # Django REST Framework configuration
 REST_FRAMEWORK = {

@@ -1,0 +1,76 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <title>Offline · GoClimb</title>
+  <link rel="icon" type="image/png" href="{% static 'pwa/icons/favicon-32.png' %}">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; font-family: Poppins, system-ui, -apple-system, sans-serif;
+           background: #0f172a; color: #e2e8f0; display: flex; justify-content: center;
+           padding: calc(24px + env(safe-area-inset-top, 0px)) 16px calc(24px + env(safe-area-inset-bottom, 0px)); }
+    .card { width: 100%; max-width: 520px; }
+    img { width: 72px; height: 72px; border-radius: 18px; }
+    h1 { margin: 16px 0 6px; font-size: 24px; color: #fff; }
+    p { margin: 0 0 18px; color: #94a3b8; line-height: 1.5; }
+    h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: #64748b; margin: 22px 0 8px; }
+    a.item { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 13px 14px;
+             margin-bottom: 8px; border-radius: 12px; background: #1e293b; color: #f1f5f9; text-decoration: none; }
+    a.item:hover { background: #273449; }
+    a.item small { color: #64748b; }
+    .btn { display: inline-block; margin-top: 8px; padding: 11px 18px; border: 0; border-radius: 10px;
+           background: #2563eb; color: #fff; font: inherit; cursor: pointer; }
+    .empty { color: #64748b; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <img src="{% static 'pwa/icons/icon-192.png' %}" alt="">
+    <h1>You're offline</h1>
+    <p>This page wasn't saved yet. Pages you've opened before, and walls you've saved in Wall Scan, still work without internet.</p>
+    <button class="btn" onclick="location.reload()">Try again</button>
+
+    <h2>Available offline</h2>
+    <div id="pages"><div class="empty">Checking saved pages…</div></div>
+  </div>
+
+<script>
+(async function () {
+  const box = document.getElementById("pages");
+  const LABELS = { "/search/": "Search crags", "/map/": "Map", "/favorites/": "Favorites", "/forum/": "Community",
+                   "/profile/": "Profile", "/dashboard/": "Dashboard", "/ar/scan/": "Wall Scan (saved walls)" };
+  function label(path) {
+    if (LABELS[path]) return LABELS[path];
+    const crag = path.match(/^\/crag\/([^/]+)\/$/);
+    if (crag) return "Crag: " + decodeURIComponent(crag[1]).replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    return path;
+  }
+  try {
+    if (!("caches" in window)) throw new Error("no cache api");
+    const paths = new Set();
+    for (const name of await caches.keys()) {
+      if (!name.startsWith("gc-pages") && !name.startsWith("gc-precache")) continue;
+      for (const req of await (await caches.open(name)).keys()) {
+        const u = new URL(req.url);
+        if (u.origin === location.origin && u.pathname.endsWith("/") && u.pathname !== "/offline/" && !u.search) paths.add(u.pathname);
+      }
+    }
+    const list = [...paths].sort((a, b) => (a === "/ar/scan/" ? -1 : b === "/ar/scan/" ? 1 : a.localeCompare(b)));
+    box.innerHTML = "";
+    if (!list.length) { box.innerHTML = '<div class="empty">Nothing saved yet. Browse GoClimb while online and pages are kept automatically.</div>'; return; }
+    for (const p of list) {
+      const a = document.createElement("a");
+      a.className = "item"; a.href = p;
+      a.innerHTML = "<span></span><small>›</small>";
+      a.firstChild.textContent = label(p);
+      box.appendChild(a);
+    }
+  } catch (e) {
+    box.innerHTML = '<div class="empty">Saved pages can’t be listed in this browser.</div>';
+  }
+})();
+</script>
+</body>
+</html>

@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Go Climb</title>
+    {% include "pwa/head.html" %}
     
     <!-- Google Fonts: Poppins -->
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -77,16 +78,19 @@
         <a href="/search/" class="nav-brand">
             <h2><i class="fas fa-mountain"></i> Go Climb</h2>
         </a>
+        <button class="nav-toggle" id="nav-toggle" type="button" aria-label="Menu" aria-expanded="false"><i class="fas fa-bars"></i></button>
         
         <div class="nav-links">
             <a href="/search/" {% if '/search' in request.path %}class="active"{% endif %}><i class="fas fa-search"></i> Search</a>
             <a href="/map/" {% if '/map' in request.path %}class="active"{% endif %}><i class="fas fa-map"></i> Map</a>
-            <a href="/forum/" {% if '/forum' in request.path %}class="active"{% endif %}><i class="fas fa-comments"></i> Community</a>
+            <a href="/community/" {% if '/community' in request.path or '/forum' in request.path %}class="active"{% endif %}><i class="fas fa-comments"></i> Community</a>
             <a href="/ar/scan/" {% if '/ar/' in request.path %}class="active"{% endif %}><i class="fas fa-camera"></i> Wall Scan</a>
             {% if request.user.is_authenticated %}
                 <a href="/favorites/" {% if '/favorites' in request.path %}class="active"{% endif %}><i class="fas fa-heart"></i> Favorites</a>
                 <a href="/dashboard/" {% if '/dashboard' in request.path %}class="active"{% endif %}><i class="fas fa-tachometer-alt"></i> Dashboard</a>
-                {% if request.user.is_staff %}<a href="/manage/" {% if '/manage' in request.path %}class="active"{% endif %}><i class="fas fa-shield-alt"></i> Manage</a>{% endif %}
+                {% if request.user.is_staff %}<a href="/manage/" {% if '/manage' in request.path %}class="active"{% endif %}><i class="fas fa-shield-alt"></i> Manage</a>
+                <a href="/ar/review/" {% if '/ar/review' in request.path %}class="active"{% endif %}><i class="fas fa-clipboard-check"></i> Review</a>{% endif %}
+                <a href="/profile/preferences/" {% if '/profile/preferences' in request.path %}class="active"{% endif %}><i class="fas fa-sliders-h"></i> Preferences</a>
                 <a href="/profile/" class="nav-user"><i class="fas fa-user-circle"></i> {{ request.user.username }}</a>
                 <a href="#" id="nav-logout" class="nav-logout"><i class="fas fa-sign-out-alt"></i> Logout</a>
             {% else %}
@@ -97,6 +101,13 @@
     </nav>
 
     <script>
+        // Phone / tablet menu
+        document.getElementById('nav-toggle').addEventListener('click', function () {
+            var nav = this.closest('nav');
+            var open = nav.classList.toggle('open');
+            this.setAttribute('aria-expanded', open ? 'true' : 'false');
+            this.innerHTML = open ? '<i class="fas fa-times"></i>' : '<i class="fas fa-bars"></i>';
+        });
         // Global logout via the auth API (session-based).
         document.addEventListener('click', function (e) {
             if (e.target.closest && e.target.closest('#nav-logout')) {
@@ -128,9 +139,18 @@
         .nav-links a:hover, .nav-links a.active { color: #3b82f6; }
         .nav-links a.nav-user { color: #fff; font-weight: 600; }
         .nav-links a.nav-logout { color: #f87171; }
+        .nav-toggle { display: none; background: none; border: 0; color: #fff; font-size: 24px; cursor: pointer; padding: 4px 8px; }
+        /* Tablets & phones: collapse the links into a menu */
+        @media (max-width: 1180px) {
+            nav { padding: 12px 18px; flex-wrap: wrap; position: sticky; top: 0; z-index: 1000; }
+            nav h2 { font-size: 20px; }
+            .nav-toggle { display: block; }
+            .nav-links { display: none; width: 100%; flex-direction: column; align-items: stretch; gap: 0; padding-top: 8px; }
+            nav.open .nav-links { display: flex; }
+            .nav-links a { padding: 13px 6px; font-size: 16px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+        }
         @media (max-width: 600px) {
-            .nav-links { gap: 14px; }
-            .nav-links a { font-size: 13px; }
+            main { padding: 10px; }
         }
     </style>
 
@@ -171,5 +191,7 @@
     </script>
     {% endif %}
 
+    {% include "preferences/onboarding.html" %}
+    {% include "pwa/register.html" %}
 </body>
 </html>

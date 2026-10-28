@@ -1,0 +1,308 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .rw-wrap { width: 100%; max-width: 1200px; margin: 0 auto; align-self: flex-start; padding-bottom: 40px; }
+  .rw-card { background: #fff; color: #1e293b; border-radius: 16px; padding: 16px; margin-bottom: 14px; box-shadow: 0 4px 18px rgba(0,0,0,.1); }
+  .rw-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; }
+  .rw-card h2, .rw-card h3 { margin: 0 0 8px; color: #0f172a; }
+  .rw-btn { border: 0; border-radius: 10px; padding: 10px 13px; font-size: 14px; font-weight: 500; cursor: pointer; background: #2563eb;
+            color: #fff; display: inline-flex; gap: 6px; align-items: center; justify-content: center; text-decoration: none; min-height: 42px; }
+  .rw-btn.ghost { background: #e2e8f0; color: #1e293b; } .rw-btn.green { background: #16a34a; } .rw-btn.red { background: #dc2626; }
+  .rw-btn.sm { padding: 6px 9px; min-height: 32px; font-size: 12px; }
+  .rw-btn:disabled { opacity: .45; cursor: default; }
+  .rw-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #rw-canvas { width: 100%; height: auto; display: block; border-radius: 12px; background: #0f172a; cursor: crosshair; touch-action: manipulation; }
+  .rw-mode { margin: 10px 0 0; padding: 10px 12px; border-radius: 10px; background: #eff6ff; color: #1e3a8a; font-size: 14px; display: none; }
+  .rw-route { border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px; margin-bottom: 8px; }
+  .rw-route.sel { border-color: #2563eb; box-shadow: 0 0 0 2px #bfdbfe; }
+  .rw-route .top { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; cursor: pointer; }
+  .rw-dot { width: 14px; height: 14px; border-radius: 50%; flex: none; }
+  .rw-badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 3px 7px; border-radius: 999px; text-transform: uppercase; }
+  .rw-badge.pending { background: #fef3c7; color: #92400e; } .rw-badge.approved { background: #dcfce7; color: #166534; }
+  .rw-badge.rejected { background: #fee2e2; color: #991b1b; } .rw-badge.edited { background: #e0e7ff; color: #3730a3; }
+  .rw-field { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 14px; margin-bottom: 8px; background: #fff; }
+  .rw-meta { font-size: 13px; color: #475569; line-height: 1.6; }
+  .rw-status { font-size: 13px; color: #475569; min-height: 18px; margin-top: 8px; }
+  @media (max-width: 900px) { .rw-grid { grid-template-columns: 1fr; } }
+</style>
+
+<div class="rw-wrap">
+  <div class="rw-card rw-row" style="justify-content:space-between">
+    <h2 style="margin:0">{{ wall.name|default:"Unnamed wall" }} <span class="rw-badge {{ wall.status }}" id="rw-wall-badge">{{ wall.status }}</span></h2>
+    <a class="rw-btn ghost" href="/ar/review/"><i class="fas fa-arrow-left"></i> Review queue</a>
+  </div>
+
+  <div class="rw-grid">
+    <div class="rw-card">
+      <canvas id="rw-canvas"></canvas>
+      <div class="rw-mode" id="rw-mode"></div>
+      <div class="rw-row" style="margin-top:10px" id="rw-draw-bar">
+        <button class="rw-btn" id="rw-new"><i class="fas fa-pen"></i> Draw new route</button>
+        <button class="rw-btn ghost" id="rw-holds-toggle"><i class="fas fa-circle"></i> Hide hold numbers</button>
+      </div>
+      <div class="rw-row" style="margin-top:10px;display:none" id="rw-edit-bar">
+        <button class="rw-btn green" id="rw-save-seq"><i class="fas fa-check"></i> Save route</button>
+        <button class="rw-btn ghost" id="rw-undo"><i class="fas fa-undo"></i> Undo</button>
+        <button class="rw-btn ghost" id="rw-clear">Clear</button>
+        <button class="rw-btn ghost" id="rw-cancel">Cancel</button>
+      </div>
+      <div class="rw-status" id="rw-status"></div>
+      <p class="rw-meta" style="margin-top:8px">
+        <i class="fas fa-info-circle"></i> Routes can only connect holds the detector found (the white circles).
+        Click holds in climbing order: start first, top last.
+      </p>
+    </div>
+
+    <div>
+      <div class="rw-card">
+        <h3>Wall decision</h3>
+        <div class="rw-meta">
+          {{ wall.venue|default:"-" }} · {{ wall.mode }} · {{ wall.hold_count }} holds<br>
+          Uploaded by <b>{{ wall.uploaded_by.username|default:"unknown" }}</b>
+          via {% if wall.source == "app" %}the Vuforia app{% elif wall.source == "import" %}import{% else %}the website{% endif %},
+          {{ wall.created_at|date:"d M Y H:i" }}
+          {% if wall.reviewed_by %}<br>Last reviewed by {{ wall.reviewed_by.username }}, {{ wall.reviewed_at|date:"d M Y H:i" }}{% endif %}
+        </div>
+        <label class="rw-meta" for="rw-crag" style="display:block;margin-top:10px">Map location</label>
+        <select class="rw-field" id="rw-crag">
+          <option value="">Not linked to a location</option>
+          {% for c in crags %}<option value="{{ c.id }}" {% if wall.crag_id == c.id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+        </select>
+        <textarea class="rw-field" id="rw-note" rows="2" placeholder="Note to the climber (optional)">{{ wall.review_note }}</textarea>
+        <label class="rw-meta"><input type="checkbox" id="rw-approve-routes" checked> Also approve routes still pending</label>
+        <div class="rw-row" style="margin-top:10px">
+          <button class="rw-btn green" data-wall="approved"><i class="fas fa-check"></i> Approve</button>
+          <button class="rw-btn red" data-wall="rejected"><i class="fas fa-times"></i> Reject</button>
+          <button class="rw-btn ghost" data-wall="pending">Back to pending</button>
+        </div>
+        <div class="rw-row" style="margin-top:10px">
+          <a class="rw-btn ghost" href="/ar/review/locations/new/"><i class="fas fa-map-marker-alt"></i> Add a new location</a>
+        </div>
+      </div>
+
+      <div class="rw-card">
+        <h3>Routes</h3>
+        <div id="rw-routes"><p class="rw-meta">Loading…</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{{ wall.wall_id|json_script:"rw-wall-id" }}
+{{ link_data|json_script:"rw-link-data" }}
+<script>
+(function () {
+  const WALL = JSON.parse(document.getElementById("rw-wall-id").textContent);
+  const LINK = JSON.parse(document.getElementById("rw-link-data").textContent);   // Option A: crag route <-> scanned route
+  const INITIAL_CRAG = document.getElementById("rw-crag").value;
+  const $ = (id) => document.getElementById(id);
+  const canvas = $("rw-canvas"), ctx = canvas.getContext("2d");
+  const PALETTE = ["#f97316", "#22c55e", "#3b82f6", "#eab308", "#ec4899", "#14b8a6", "#a855f7", "#ef4444"];
+  let img = null, doc = null, holds = {}, mode = "view", editRoute = null, seq = [], selected = null, showNumbers = true;
+
+  function csrf() { const m = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/); return m ? decodeURIComponent(m[1]) : ""; }
+  function status(t) { $("rw-status").textContent = t || ""; }
+  function esc(t) { const d = document.createElement("div"); d.textContent = t == null ? "" : String(t); return d.innerHTML; }
+  async function call(method, url, body) {
+    const r = await fetch(url, { method, credentials: "same-origin",
+      headers: Object.assign({ "X-CSRFToken": csrf() }, body ? { "Content-Type": "application/json" } : {}),
+      body: body ? JSON.stringify(body) : undefined });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+    return data;
+  }
+  const routeColor = (rt, i) => rt.color || PALETTE[i % PALETTE.length];
+  const reviewOf = (rid) => (doc.review && doc.review.routes && doc.review.routes[rid]) || { status: "pending" };
+
+  // ------------------------------------------------------------ drawing
+  function draw() {
+    if (!img || !doc) return;
+    canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+    ctx.drawImage(img, 0, 0);
+    const W = canvas.width, H = canvas.height, r = Math.max(7, W / 80);
+    ctx.lineWidth = Math.max(3, W / 260);
+    // routes (dim the others while editing / a route is selected)
+    (doc.routes || []).forEach((rt, i) => {
+      if (mode !== "view" && editRoute !== rt.id) return;
+      if (mode === "edit" && editRoute === rt.id) return;          // shown as the live sequence instead
+      const pts = (rt.hold_ids || []).map((id) => holds[id]).filter(Boolean);
+      ctx.globalAlpha = selected && selected !== rt.id ? 0.2 : 0.9;
+      ctx.strokeStyle = ctx.fillStyle = routeColor(rt, i);
+      ctx.beginPath(); pts.forEach((p, j) => j ? ctx.lineTo(p.x * W, p.y * H) : ctx.moveTo(p.x * W, p.y * H)); ctx.stroke();
+      pts.forEach((p) => { ctx.beginPath(); ctx.arc(p.x * W, p.y * H, r * 0.8, 0, 7); ctx.fill(); });
+      ctx.globalAlpha = 1;
+    });
+    // every detected hold
+    Object.values(holds).forEach((h) => {
+      ctx.beginPath(); ctx.arc(h.x * W, h.y * H, r, 0, 7);
+      ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = Math.max(2, W / 400); ctx.stroke();
+      if (showNumbers && mode !== "view") {
+        ctx.font = `${Math.round(r * 1.1)}px sans-serif`; ctx.fillStyle = "rgba(255,255,255,.85)";
+        ctx.fillText(h.id.replace("H", ""), h.x * W + r * 1.1, h.y * H - r * 0.6);
+      }
+    });
+    // sequence being drawn
+    if (mode !== "view") {
+      ctx.strokeStyle = "#facc15"; ctx.fillStyle = "#facc15"; ctx.lineWidth = Math.max(4, W / 220);
+      ctx.beginPath(); seq.forEach((id, j) => { const p = holds[id]; j ? ctx.lineTo(p.x * W, p.y * H) : ctx.moveTo(p.x * W, p.y * H); }); ctx.stroke();
+      seq.forEach((id, j) => {
+        const p = holds[id];
+        ctx.beginPath(); ctx.arc(p.x * W, p.y * H, r * 1.25, 0, 7); ctx.fillStyle = "#facc15"; ctx.fill();
+        ctx.fillStyle = "#0f172a"; ctx.font = `bold ${Math.round(r * 1.3)}px sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(j === 0 ? "S" : (j === seq.length - 1 && seq.length > 1 ? "T" : String(j + 1)), p.x * W, p.y * H);
+        ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
+      });
+    }
+  }
+
+  // ------------------------------------------------------------ picking holds (only existing ones)
+  canvas.addEventListener("click", (e) => {
+    if (mode === "view" || !img) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width, y = (e.clientY - rect.top) / rect.height;
+    const aspect = canvas.height / canvas.width;
+    let best = null, bestD = Infinity;
+    Object.values(holds).forEach((h) => {
+      const d = Math.hypot(h.x - x, (h.y - y) * aspect);
+      if (d < bestD) { bestD = d; best = h; }
+    });
+    if (!best || bestD > 0.04) { status("Tap on one of the detected holds (white circles)."); return; }
+    if (seq[seq.length - 1] === best.id) { seq.pop(); status(`Removed ${best.id}.`); }
+    else if (seq.includes(best.id)) { status(`${best.id} is already in this route.`); return; }
+    else { seq.push(best.id); status(`${seq.length} holds selected.`); }
+    updateModeText(); draw();
+  });
+
+  function setMode(m, routeId) {
+    mode = m; editRoute = routeId || null;
+    $("rw-draw-bar").style.display = m === "view" ? "" : "none";
+    $("rw-edit-bar").style.display = m === "view" ? "none" : "";
+    $("rw-mode").style.display = m === "view" ? "none" : "";
+    updateModeText(); draw();
+  }
+  function updateModeText() {
+    $("rw-mode").innerHTML = mode === "draw"
+      ? `<b>Drawing a new route</b>: tap holds from start to top. ${seq.length} selected (need at least 2).`
+      : `<b>Editing ${esc(editRoute)}</b>: tap holds from start to top. ${seq.length} selected (need at least 2).`;
+    $("rw-save-seq").disabled = seq.length < 2;
+  }
+
+  $("rw-new").onclick = () => { seq = []; selected = null; setMode("draw"); status(""); };
+  $("rw-undo").onclick = () => { seq.pop(); updateModeText(); draw(); };
+  $("rw-clear").onclick = () => { seq = []; updateModeText(); draw(); };
+  $("rw-cancel").onclick = () => { seq = []; setMode("view"); status(""); };
+  $("rw-holds-toggle").onclick = () => {
+    showNumbers = !showNumbers;
+    $("rw-holds-toggle").innerHTML = showNumbers ? '<i class="fas fa-circle"></i> Hide hold numbers' : '<i class="fas fa-circle"></i> Show hold numbers';
+    draw();
+  };
+  $("rw-save-seq").onclick = async () => {
+    try {
+      if (mode === "draw") {
+        const res = await call("POST", `/ar/api/walls/${WALL}/routes`, { hold_ids: seq });
+        status(`Route ${res.route_id} created and approved.`);
+      } else {
+        await call("POST", `/ar/api/walls/${WALL}/routes/${editRoute}/sequence`, { hold_ids: seq });
+        status(`Route ${editRoute} updated.`);
+      }
+      seq = []; setMode("view"); await load();
+    } catch (err) { status("Could not save: " + err.message); }
+  };
+
+  // ------------------------------------------------------------ route list
+  function renderRoutes() {
+    const box = $("rw-routes"); box.innerHTML = "";
+    const routes = doc.routes || [];
+    if (!routes.length) { box.innerHTML = '<p class="rw-meta">No routes. Use "Draw new route".</p>'; return; }
+    routes.forEach((rt, i) => {
+      const rv = reviewOf(rt.id);
+      const el = document.createElement("div");
+      el.className = "rw-route" + (selected === rt.id ? " sel" : "");
+      el.innerHTML = `
+        <div class="top"><span class="rw-dot" style="background:${esc(routeColor(rt, i))}"></span>
+          <b style="flex:1">${esc(rt.id)} <span style="font-weight:400;color:#64748b">${esc(rt.difficulty || "")} · ${(rt.hold_ids || []).length} holds</span></b>
+          <span class="rw-badge ${esc(rv.status)}">${esc(rv.status)}</span>${rv.edited_by_admin ? ' <span class="rw-badge edited">edited</span>' : ""}</div>
+        <div class="rw-row">
+          <button class="rw-btn green sm" data-act="approved">Approve</button>
+          <button class="rw-btn red sm" data-act="rejected">Reject</button>
+          <button class="rw-btn ghost sm" data-act="edit"><i class="fas fa-pen"></i> Edit holds</button>
+          <button class="rw-btn ghost sm" data-act="delete"><i class="fas fa-trash"></i></button>
+        </div>
+        ${linkHtml(rt.id)}`;
+      el.querySelector(".top").onclick = () => { selected = selected === rt.id ? null : rt.id; renderRoutes(); draw(); };
+      el.querySelectorAll("[data-act]").forEach((b) => b.onclick = () => routeAction(rt, b.dataset.act));
+      const sel = el.querySelector("select[data-link]");
+      if (sel) sel.onchange = () => linkRoute(rt.id, sel.value);
+      box.appendChild(el);
+    });
+  }
+
+  // ------------------------------------------------------------ Option A: show a crag route on this real wall
+  function linkHtml(rid) {
+    if (!LINK.crag_routes.length) {
+      return `<div class="rw-meta" style="margin-top:8px"><i class="fas fa-link"></i> ${LINK.crag_name
+        ? "No routes are listed for " + esc(LINK.crag_name) + " yet."
+        : "Set the wall's map location (right) to link it to a crag route."}</div>`;
+    }
+    const current = LINK.links[rid] || "";
+    return `<div style="margin-top:8px"><label class="rw-meta"><i class="fas fa-link"></i> Shown as crag route</label>
+      <select class="rw-field" data-link style="margin:4px 0 0">
+        <option value="">Not linked</option>
+        ${LINK.crag_routes.map((r) => `<option value="${r.id}" ${String(current) === String(r.id) ? "selected" : ""}>${esc(r.label)}</option>`).join("")}
+      </select></div>`;
+  }
+  async function linkRoute(rid, routePk) {
+    try {
+      await call("POST", `/ar/review/${WALL}/routes/${rid}/link/`, { route_pk: routePk ? Number(routePk) : null });
+      Object.keys(LINK.links).forEach((k) => { if (String(LINK.links[k]) === String(routePk)) delete LINK.links[k]; });
+      if (routePk) LINK.links[rid] = Number(routePk); else delete LINK.links[rid];
+      renderRoutes();
+      status(routePk ? `${rid} is now shown as that crag route ("View on wall").` : `${rid} unlinked.`);
+    } catch (err) { status("Link failed: " + err.message); }
+  }
+
+  async function routeAction(rt, act) {
+    try {
+      if (act === "approved" || act === "rejected") {
+        await call("POST", `/ar/review/${WALL}/routes/${rt.id}/decision/`, { status: act });
+        status(`${rt.id} ${act}.`);
+      } else if (act === "edit") {
+        seq = (rt.hold_ids || []).slice(); selected = rt.id; setMode("edit", rt.id);
+        status("Tap the last hold to remove it, or Clear and tap holds again in order."); return;
+      } else if (act === "delete") {
+        if (!confirm(`Delete route ${rt.id}?`)) return;
+        await call("DELETE", `/ar/api/walls/${WALL}/routes/${rt.id}`);
+        status(`${rt.id} deleted.`);
+      }
+      await load();
+    } catch (err) { status("Failed: " + err.message); }
+  }
+
+  // ------------------------------------------------------------ wall decision
+  document.querySelectorAll("[data-wall]").forEach((b) => b.onclick = async () => {
+    try {
+      const crag = $("rw-crag").value;
+      const res = await call("POST", `/ar/review/${WALL}/decision/`, {
+        status: b.dataset.wall, note: $("rw-note").value,
+        crag_id: crag ? Number(crag) : null,
+        approve_pending_routes: b.dataset.wall === "approved" && $("rw-approve-routes").checked });
+      $("rw-wall-badge").className = "rw-badge " + res.status; $("rw-wall-badge").textContent = res.status;
+      status("Wall " + res.status + ".");
+      if ($("rw-crag").value !== INITIAL_CRAG) { location.reload(); return; }   // load that location's route list for linking
+      await load();
+    } catch (err) { status("Failed: " + err.message); }
+  });
+
+  // ------------------------------------------------------------ load
+  async function load() {
+    doc = await call("GET", `/ar/api/walls/${WALL}/unity`);
+    holds = {}; (doc.holds || []).forEach((h) => holds[h.id] = h);
+    renderRoutes(); draw();
+  }
+  img = new Image();
+  img.onload = () => load().catch((err) => status("Could not load the wall: " + err.message));
+  img.onerror = () => status("The wall photo is missing.");
+  img.src = `/ar/photo/${WALL}`;
+})();
+</script>
+{% endblock %}

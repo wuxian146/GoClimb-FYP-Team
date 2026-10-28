@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .ar-wrap { max-width: 640px; margin: 0 auto; padding: 16px; }
+  .ar-card { background: #fff; color: #1e293b; border-radius: 14px; box-shadow: 0 4px 18px rgba(0,0,0,.08); padding: 22px; margin-bottom: 16px; }
+  .ar-card h2 { margin: 0 0 6px; }
+  .ar-card p { color: #475569; line-height: 1.55; }
+  .ar-btn { display: inline-flex; gap: 8px; align-items: center; border: 0; border-radius: 10px; padding: 12px 18px;
+            font-size: 15px; cursor: pointer; background: #2563eb; color: #fff; text-decoration: none; margin: 4px 6px 4px 0; }
+  .ar-btn.ghost { background: #e2e8f0; color: #1e293b; }
+  .ar-warn { background: #fff7ed; color: #9a3412; border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
+  .ar-steps { padding-left: 20px; color: #475569; line-height: 1.7; }
+  code { background: #f1f5f9; padding: 2px 6px; border-radius: 6px; }
+</style>
+
+<div class="ar-wrap">
+  <div class="ar-card">
+    <h2><i class="fas fa-cube"></i> GoClimb AR camera</h2>
+    <p>The AR camera uses <b>Vuforia</b> to lock routes onto the real wall as you move your phone.
+       It runs in the <b>GoClimbAR</b> app; the website opens it for you with one tap.</p>
+
+    <div class="ar-warn" id="ar-missing" style="display:none">
+      <i class="fas fa-circle-info"></i> It looks like GoClimbAR isn't installed on this phone yet.
+    </div>
+    <div class="ar-warn" id="ar-desktop" style="display:none">
+      <i class="fas fa-mobile-screen"></i> The AR camera needs a phone. Open this page on your phone:<br>
+      <code id="ar-here"></code>
+    </div>
+
+    <div>
+      {% if ar_app_url %}
+        <a class="ar-btn" href="{{ ar_app_url }}"><i class="fas fa-download"></i> Download GoClimbAR</a>
+      {% endif %}
+      <button class="ar-btn {% if ar_app_url %}ghost{% endif %}" id="ar-open"><i class="fas fa-camera"></i> Open AR camera</button>
+      <a class="ar-btn ghost" href="/ar/scan/"><i class="fas fa-arrow-left"></i> Back to Wall Scan</a>
+    </div>
+    {% if not ar_app_url %}
+      <p style="font-size:13px;margin-top:12px">Ask the GoClimb team for the GoClimbAR app (Android APK).</p>
+    {% endif %}
+  </div>
+
+  <div class="ar-card">
+    <h3 style="margin-top:0">How it works</h3>
+    <ol class="ar-steps">
+      <li>Install GoClimbAR once.</li>
+      <li>On the website, tap <b>Open in AR camera</b> on any saved wall.</li>
+      <li>The app opens straight into the camera with that wall's routes loaded, and connects to this website automatically.</li>
+      <li>Point the phone at the wall. The routes stick to it, even offline once loaded.</li>
+    </ol>
+  </div>
+</div>
+
+{% include "wallscan/ar_link.html" %}
+<script>
+(function () {
+  var params = new URLSearchParams(location.search);
+  var path = params.get("open") || "scan";
+  if (!/^(scan|wall\/[0-9a-fA-F-]{36})$/.test(path)) path = "scan";
+  if (params.get("missing")) document.getElementById("ar-missing").style.display = "";
+  if (!GoClimbAR.isMobile) {
+    document.getElementById("ar-desktop").style.display = "";
+    document.getElementById("ar-here").textContent = location.origin + "/ar/app/?open=" + encodeURIComponent(path);
+  }
+  document.getElementById("ar-open").onclick = function () {
+    if (!GoClimbAR.isMobile) { document.getElementById("ar-desktop").scrollIntoView({ behavior: "smooth" }); return; }
+    GoClimbAR.open(path);
+  };
+})();
+</script>
+{% endblock %}
