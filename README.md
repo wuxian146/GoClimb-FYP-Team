@@ -275,7 +275,7 @@ iPhone users use the browser Live AR instead (an APK can't be installed on iOS).
 | Name | GitHub | Role |
 | Jingen | [@chenjingen-jane](https://github.com/chenjingen-jane) | *Primarily responsible for AR integration, development and deployment, as well as preliminary frontend design* |
 | Wuxian | [@wuxian146](https://github.com/wuxian146) | *Responsilble for deployment tasks(excluding AR-related components), including frontend and backend API integration* |
-| Marvin | [@Mrvnp478](https://github.com/Mrvnp478) | *Responsilble for Marketing video and report generating* |
+| Marvin | [@Mrvnp478](https://github.com/Mrvnp478) | *Responsilble for Marketing video, Landing Page, and report generating* |
 | Harrods | [@HVG2K](https://github.com/HVG2K) | *Responsilble for report generating* |
 
 *Final Year Project. Climbing is dangerous: grades and routes shown in the app are guidance only. Always check conditions and climb within your ability.*
