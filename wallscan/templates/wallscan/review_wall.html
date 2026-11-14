@@ -78,6 +78,7 @@
         <div class="rw-row" style="margin-top:10px">
           <a class="rw-btn ghost" href="/ar/review/locations/new/"><i class="fas fa-map-marker-alt"></i> Add a new location</a>
           <a class="rw-btn ghost" href="/ar/wall/{{ wall.wall_id }}/"><i class="fas fa-eye"></i> What climbers see</a>
+          <button class="rw-btn red" id="rw-delete-wall" type="button"><i class="fas fa-trash"></i> Delete wall</button>
         </div>
       </div>
 
@@ -104,6 +105,12 @@
   function csrf() { const m = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/); return m ? decodeURIComponent(m[1]) : ""; }
   function status(t) { $("rw-status").textContent = t || ""; }
   function esc(t) { const d = document.createElement("div"); d.textContent = t == null ? "" : String(t); return d.innerHTML; }
+  document.getElementById("rw-delete-wall").onclick = async () => {
+    if (!confirm("Delete this wall permanently?\n\nIts photo, holds and routes are removed for everyone. This cannot be undone.")) return;
+    try { await call("DELETE", `/ar/api/walls/${WALL}?confirm=1`); location.href = "/ar/review/?msg=Wall deleted"; }
+    catch (err) { alert("Could not delete: " + err.message); }
+  };
+
   async function call(method, url, body) {
     const r = await fetch(url, { method, credentials: "same-origin",
       headers: Object.assign({ "X-CSRFToken": csrf() }, body ? { "Content-Type": "application/json" } : {}),

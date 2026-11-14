@@ -63,7 +63,7 @@
 <div class="dash-wrap">
     <div class="stat-grid">
         <div class="stat-card"><div class="big">{{ fav_count }}</div><div class="lbl">Saved Crags</div></div>
-        <div class="stat-card"><div class="big">{{ post_count }}</div><div class="lbl">Forum Posts</div></div>
+        <div class="stat-card"><div class="big">{{ post_count }}</div><div class="lbl">Community Posts</div></div>
         <div class="stat-card"><div class="big">{{ comment_count }}</div><div class="lbl">Comments</div></div>
         <div class="stat-card"><div class="big">{{ like_count }}</div><div class="lbl">Likes Given</div></div>
     </div>
@@ -87,22 +87,43 @@
             </div>
 
             <div class="panel">
-                <h3><i class="fas fa-comments"></i> Recent Forum Activity</h3>
+                <h3><i class="fas fa-comments"></i> Your Community Posts</h3>
                 {% if my_posts %}
                     {% for p in my_posts %}
                     <div class="feed-item">
-                        <a class="t" href="/forum/">{{ p.title }}</a>
+                        <a class="t" href="/community/">{{ p.title }}</a>
                         {% if p.crag %}<a class="pill" href="/crag/{{ p.crag.slug }}/">{{ p.crag.name }}</a>{% endif %}
                         <div class="m">{{ p.likes.count }} likes · {{ p.comments.count }} comments · {{ p.created_at|date:"M d, Y" }}</div>
                     </div>
                     {% endfor %}
                 {% else %}
-                    <p class="empty">You haven't posted yet. <a href="/forum/" style="color:#3b82f6;">Join the community →</a></p>
+                    <p class="empty">You haven't posted yet. <a href="/community/" style="color:#3b82f6;">Join the community →</a></p>
                 {% endif %}
             </div>
         </div>
 
         <div>
+            <div class="panel">
+                <h3><i class="fas fa-calendar-check"></i> Your Climbs</h3>
+                {% if upcoming_climbs or past_climbs %}
+                    {% for c in upcoming_climbs %}
+                    <div class="feed-item">
+                        <a class="t" href="/crag/{{ c.crag.slug }}/">{{ c.crag.name }}</a>
+                        <span class="pill">Upcoming</span>
+                        <div class="m">{{ c.climb_at|date:"D, d M Y, H:i" }}{% if c.friends %} · with {{ c.friends }}{% endif %}</div>
+                    </div>
+                    {% endfor %}
+                    {% for c in past_climbs %}
+                    <div class="feed-item">
+                        <a class="t" href="/crag/{{ c.crag.slug }}/">{{ c.crag.name }}</a>
+                        <div class="m">Climbed {{ c.climb_at|date:"D, d M Y" }}{% if c.notes %} · {{ c.notes|truncatechars:50 }}{% endif %}</div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="empty">No climbs planned yet. Open a crag and schedule a climb.</p>
+                {% endif %}
+            </div>
+
             <div class="panel">
                 <h3><i class="fas fa-chart-pie"></i> Crag Type Mix</h3>
                 {% if rock_counts %}
@@ -123,7 +144,7 @@
                 {% if my_comments %}
                     {% for c in my_comments %}
                     <div class="feed-item">
-                        <a class="t" href="/forum/">on "{{ c.post.title }}"</a>
+                        <a class="t" href="/community/">on "{{ c.post.title }}"</a>
                         <div class="m">{{ c.created_at|date:"M d, Y" }} · {{ c.content|truncatechars:60 }}</div>
                     </div>
                     {% endfor %}

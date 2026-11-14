@@ -184,11 +184,11 @@ def api_logout(request):
 def api_password_reset(request):
     """Generate a signed reset link. No SMTP wired up — link is returned/printed locally."""
     email = request.data.get('email')
-    user = User.objects.filter(email=email).first()
-    # Return generic success even when the email is unknown, to avoid user enumeration.
-    if user:
-        return Response({'success': True, 'message': 'If an account matches this email, password reset instructions have been generated.'})
-    return Response({'success': True, 'message': 'If an account matches this email, password reset instructions have been generated.'})
+    # GoClimb has no email service: record a request that administrators handle in the Review queue.
+    # The reply is the same whatever was typed, so the page never reveals which emails have an account.
+    from wallscan.password_resets import record_request
+    record_request(email)
+    return Response({'success': True, 'message': 'Your request has been received. An administrator will restore access to your account.'})
 
 
 @api_view(['POST'])

@@ -10,7 +10,7 @@ register = template.Library()
 
 def visible_link(user, route):
     link = RouteWallLink.objects.select_related("wall").filter(route=route).first()
-    if link is None or not records.wall_visible(user, link.wall):
+    if link is None or not records.wall_openable(user, link.wall):
         return None
     if records.can_manage(user, link.wall):
         return link

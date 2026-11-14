@@ -8,7 +8,7 @@ import logging
 
 from django.utils import timezone
 
-from .models import APPROVED, PENDING, ArAppToken, RouteReview, WallSubmission
+from .models import APPROVED, PENDING, REJECTED, ArAppToken, RouteReview, WallSubmission
 
 log = logging.getLogger(__name__)
 
@@ -115,12 +115,23 @@ def wall_visible(user, sub):
     return sub.visible_to(user)
 
 
+def wall_openable(user, sub):
+    if sub is None:                                # no record yet: only admins
+        return bool(user and user.is_staff)
+    return sub.openable_by(user)
+
+
 def doc_for(user, sub, doc):
     """Regular users only see approved routes of approved walls.
-    The uploader and admins see everything, plus the review state."""
+    The uploader (pending walls) and admins see everything, plus the review state.
+    A wall this user may not open (e.g. rejected) comes back with no routes, marked unavailable."""
     if sub is None or not isinstance(doc, dict):
         return doc
     doc = dict(doc)
+    if not wall_openable(user, sub):
+        doc["routes"] = []
+        doc["unavailable"] = True
+        return doc
     reviews = {r.route_id: r for r in sub.route_reviews.all()}
     if can_manage(user, sub):
         doc["review"] = {
@@ -144,6 +155,8 @@ def filter_wall_list(user, items):
         item = dict(item)
         item["review_status"] = sub.status if sub else "unreviewed"
         item["mine"] = bool(sub and user and user.is_authenticated and sub.uploaded_by_id == user.id)
+        item["openable"] = wall_openable(user, sub)
+        item["review_note"] = sub.review_note if (sub and item["mine"] and sub.status == REJECTED) else ""
         out.append(item)
     return out
 

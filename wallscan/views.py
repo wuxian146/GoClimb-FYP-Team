@@ -110,11 +110,17 @@ def ar_api(request, subpath=""):
     if m:
         wall_id = next(g for g in m.groups() if g)
         sub = WallSubmission.objects.filter(wall_id=wall_id).first()
-        if method in SAFE and not records.wall_visible(user, sub):
+        allowed = records.wall_visible if p.startswith("/photo/") else records.wall_openable
+        if method in SAFE and not allowed(user, sub):
             return _json({"error": "wall not found"}, 404)
 
     engine = _engine()
     code, out, ctype = engine.handle(method, p, request.GET.dict(), body, request.headers, is_admin=is_staff)
+
+    # Admin deletes a wall whose engine files are already gone (e.g. hosting disk wiped): remove the record too
+    if code == 404 and sub is not None and method == "DELETE" and is_staff and WALL_ONE.match(p):
+        sub.delete()
+        return _json({"ok": True})
 
     # Engine lost its files (e.g. hosting disk wiped)? Serve the database backup.
     if code == 404 and sub is not None and method in SAFE:
@@ -155,6 +161,10 @@ def _after(engine, user, how, method, p, out, sub):
     if p == "/api/scan" and isinstance(out, dict) and out.get("status") == "known" and out.get("wall_id"):
         known = WallSubmission.objects.filter(wall_id=out["wall_id"]).first()
         out["doc"] = records.doc_for(user, known, out.get("doc"))
+        if known is not None and not records.wall_openable(user, known):
+            out["unavailable"] = True
+            out["message"] = ("This wall isn't available (it was not approved or is waiting for review). "
+                              "If it's a different wall, save it as a new wall.")
         return out
 
     if method not in SAFE:
@@ -259,9 +269,48 @@ def review_list(request):
     if status in (PENDING, APPROVED, REJECTED):
         places = places.filter(status=status)
     place_counts = {s: PostPlace.objects.filter(kind="new", status=s).count() for s in (PENDING, APPROVED, REJECTED)}
+    from .models import PasswordResetRequest
+    resets = PasswordResetRequest.objects.filter(done=False).select_related("user")[:200]
     return render(request, "wallscan/review_list.html", {
         "walls": walls[:200], "status": status, "counts": counts, "places": places[:200], "place_counts": place_counts,
-        "grades": GRADE_CHOICES, "rock_types": ROCK_TYPE_CHOICES})
+        "grades": GRADE_CHOICES, "rock_types": ROCK_TYPE_CHOICES, "resets": resets})
+
+
+@require_POST
+def password_reset_action(request, pk):
+    """Admin handles a climber's password reset request: set a new password, or dismiss it."""
+    if not (request.user.is_authenticated and request.user.is_staff):
+        return _json({"error": "Administrator access is required."}, 403)
+    from django.contrib.auth.password_validation import validate_password
+    from django.core.exceptions import ValidationError
+    from .models import PasswordResetRequest
+    req = PasswordResetRequest.objects.select_related("user").filter(pk=pk, done=False).first()
+    if req is None:
+        return _json({"error": "This request was already handled."}, 404)
+    try:
+        body = json.loads(request.body or b"{}")
+    except ValueError:
+        return _json({"error": "Invalid request."}, 400)
+    action = body.get("action")
+    name = req.user.get_username()
+    if action == "set_password":
+        password = body.get("password") or ""
+        try:
+            validate_password(password, req.user)
+        except ValidationError as exc:
+            return _json({"error": " ".join(exc.messages)}, 400)
+        req.user.set_password(password)                    # also signs the climber out everywhere
+        req.user.save(update_fields=["password"])
+        req.outcome = PasswordResetRequest.PASSWORD_SET
+        message = f"Password for {name} updated. Give it to them privately; they can now log in with it."
+    elif action == "dismiss":
+        req.outcome = PasswordResetRequest.DISMISSED
+        message = f"Request from {name} dismissed. Their password was not changed."
+    else:
+        return _json({"error": "Choose set_password or dismiss."}, 400)
+    req.done, req.handled_by, req.handled_at = True, request.user, timezone.now()
+    req.save(update_fields=["done", "outcome", "handled_by", "handled_at"])
+    return _json({"ok": True, "message": message})
 
 
 @ensure_csrf_cookie
@@ -511,7 +560,7 @@ def wall_routes_api(request, wall_id):
     """GET: every approved route on this wall, ranked for the current climber (best + second best)."""
     user, how = records.ar_user(request)
     sub = WallSubmission.objects.filter(wall_id=wall_id).first()
-    if sub is None or not records.wall_visible(user, sub):
+    if sub is None or not records.wall_openable(user, sub):
         return _json({"error": "wall not found"}, 404)
     doc = _wall_doc(sub)
     if doc is None:
@@ -526,7 +575,7 @@ def wall_routes_api(request, wall_id):
 def wall_page(request, wall_id):
     """All routes on one wall: real photo, pick a route (recommended ones first), phone or browser AR."""
     sub = WallSubmission.objects.select_related("crag").filter(wall_id=wall_id).first()
-    if sub is None or not records.wall_visible(request.user, sub):
+    if sub is None or not records.wall_openable(request.user, sub):
         return HttpResponse("Wall not found.", status=404)
     ctx = _ar_app_context(request)
     ctx.update({"wall": sub, "page_data": {"wall_id": sub.wall_id, "route": request.GET.get("route", "")}})
@@ -539,7 +588,7 @@ def crag_ar_page(request, slug):
     from preferences.profile_data import profile_for
     from preferences.recommend import recommend_routes
     crag = get_object_or_404(Crag, slug=slug)
-    walls = [w for w in WallSubmission.objects.filter(crag=crag).defer("photo") if records.wall_visible(request.user, w)]
+    walls = [w for w in WallSubmission.objects.filter(crag=crag).defer("photo") if records.wall_openable(request.user, w)]
     all_rows, cards = [], []
     for w in walls:
         doc = _wall_doc(w)

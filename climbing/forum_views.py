@@ -48,8 +48,12 @@ def dashboard_page(request):
         rt = f.crag.get_rock_type_display()
         rock_counts[rt] = rock_counts.get(rt, 0) + 1
 
+    from django.utils import timezone
+    now = timezone.now()
     ctx = {
         'username': user.username,
+        'upcoming_climbs': user.climb_schedules.select_related('crag').filter(climb_at__gte=now).order_by('climb_at')[:6],
+        'past_climbs': user.climb_schedules.select_related('crag').filter(climb_at__lt=now).order_by('-climb_at')[:6],
         'favorites': favorites,
         'fav_count': favorites.count(),
         'my_posts': my_posts[:6],

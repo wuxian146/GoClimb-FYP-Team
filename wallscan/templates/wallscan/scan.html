@@ -59,6 +59,9 @@
   .ws-wall { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; cursor: pointer; background: #f8fafc; }
   .ws-wall img { width: 100%; height: 120px; object-fit: cover; display: block; background: #e2e8f0; }
   .ws-wall div { padding: 8px 10px; font-size: 13px; line-height: 1.4; }
+  .ws-wall.locked { opacity: .75; cursor: default; }
+  .ws-off.ws-del { border-color: #fecaca; color: #b91c1c; }
+  .ws-locked-note { margin: 0 10px 10px; font-size: 12px; color: #991b1b; }
   .ws-off { display: block; width: calc(100% - 16px); margin: 0 8px 8px; border: 1px solid #cbd5e1; background: #fff; color: #1e293b;
             border-radius: 8px; padding: 7px 6px; font-size: 12px; cursor: pointer; }
   .ws-off.on { background: #dcfce7; border-color: #86efac; color: #166534; }
@@ -186,6 +189,8 @@
   const $ = (id) => document.getElementById(id);
   const canvas = $("ws-canvas"), ctx = canvas.getContext("2d");
   let img = null, doc = null, scanId = null, hidden = new Set(), arWallId = null, stream = null, facing = "environment";
+  let saveAsNew = false;                              // the scan matched a wall this user may not open
+  const IS_STAFF = {{ request.user.is_staff|yesno:"true,false" }};   // admins can delete walls
 
   function status(t) { $("ws-status").textContent = t || ""; }
   function csrf() { const m = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/); return m ? decodeURIComponent(m[1]) : ""; }
@@ -284,6 +289,12 @@
     const res = await call("POST", "/api/scan", { image_b64: prepared.b64, mode: $("ws-mode").value, max_routes: +$("ws-max").value });
     scanId = res.scan_id;
     const known = res.status === "known";
+    saveAsNew = known && !!res.unavailable;           // matched a wall this user may not open (e.g. rejected)
+    if (saveAsNew) {
+      status(res.message || "This wall isn't available. If it's a different wall, save it as a new wall.");
+      showDoc(res.doc, { title: "Not available: save as a new wall?", canSave: true, wallId: null });
+      return;
+    }
     status(known ? "This wall is already in GoClimb." : `Found ${res.holds_detected} holds. Check the routes, then submit for review.`);
     showDoc(res.doc, { title: known ? (res.doc.name || "Saved wall") : "New wall (preview)", canSave: !known, wallId: known ? res.wall_id : null });
   }
@@ -345,7 +356,7 @@
   $("ws-save").onclick = async () => {
     if (!$("ws-name").value.trim() || !$("ws-venue").value.trim()) { status("Please enter the wall name and the gym / crag."); return; }
     try {
-      const res = await call("POST", `/api/scans/${scanId}/save`, { name: $("ws-name").value.trim(), venue: $("ws-venue").value.trim() });
+      const res = await call("POST", `/api/scans/${scanId}/save`, { name: $("ws-name").value.trim(), venue: $("ws-venue").value.trim(), save_as_new: saveAsNew });
       status(res.created ? "Submitted! An admin will review it. You can already open it in the AR camera." : "This wall was already saved.");
       $("ws-save-box").style.display = "none";
       arWallId = res.wall_id; $("ws-ar-wall").style.display = ""; $("ws-web-ar").style.display = ""; showPicks();
@@ -412,14 +423,39 @@
         const el = document.createElement("div"); el.className = "ws-wall";
         el.innerHTML = `<img loading="lazy" src="${API}/photo/${w.wall_id}" alt=""><div><b>${esc(w.name)}</b><br>${esc(w.venue)} · ${esc(w.mode)}
           ${w.mine || w.review_status !== "approved" ? "<br>" + badge(w.review_status) : ""}</div>`;
+        if (w.openable === false) {                       // rejected: listed for the uploader, only admins can open it
+          el.classList.add("locked");
+          el.insertAdjacentHTML("beforeend", `<p class="ws-locked-note"><i class="fas fa-lock"></i> Not approved${w.review_note ? ": " + esc(w.review_note) : ""}. Only admins can open it.</p>`);
+          el.onclick = () => status(`"${w.name}" was not approved, so it can't be opened or downloaded.`);
+          box.appendChild(el);
+          return;
+        }
         el.onclick = () => openWall(w);
         const off = document.createElement("button");
         off.className = "ws-off"; off.type = "button"; off.textContent = "…";
         off.onclick = (e) => { e.stopPropagation(); toggleOffline(w, off); };
         el.appendChild(off);
         showOffline(w.wall_id, off);
+        if (IS_STAFF) {                                   // admins: delete the wall for everyone
+          const del = document.createElement("button");
+          del.className = "ws-off ws-del"; del.type = "button";
+          del.innerHTML = '<i class="fas fa-trash"></i> Delete wall';
+          del.onclick = async (e) => {
+            e.stopPropagation();
+            if (!confirm(`Delete "${w.name}" permanently?\n\nIts photo, holds and routes are removed for everyone. This cannot be undone.`)) return;
+            del.disabled = true;
+            try {
+              await call("DELETE", `/api/walls/${w.wall_id}?confirm=1`);
+              await dropWall(w.wall_id).catch(() => {});
+              offlineStatus(`"${w.name}" was deleted.`);
+              loadWalls();
+            } catch (err) { del.disabled = false; offlineStatus(`Could not delete "${w.name}": ${err.message}`); }
+          };
+          el.appendChild(del);
+        }
         box.appendChild(el);
       });
+      if (navigator.onLine) pruneDownloaded();
       if (!walls.length) box.innerHTML = '<p class="ws-note">No walls yet.</p>';
     } catch (err) { $("ws-walls").innerHTML = '<p class="ws-note">Could not load walls.</p>'; }
   }
@@ -455,6 +491,19 @@
       await Promise.all(urls.map((u) => cache.delete(u)));
     }
   }
+  // Downloaded walls that are no longer available (e.g. rejected later) are removed from this device.
+  async function pruneDownloaded() {
+    if (!("caches" in window)) return;
+    try {
+      const keys = await (await caches.open(OFF_CACHES.walls)).keys();
+      const ids = keys.map((k) => (new URL(k.url).pathname.match(/^\/ar\/photo\/([0-9a-f-]{36})$/) || [])[1]).filter(Boolean);
+      for (const id of ids) {
+        const r = await fetch(`/ar/api/walls/${id}/unity`, { credentials: "same-origin" }).catch(() => null);
+        if (r && r.status === 404) await dropWall(id);
+      }
+    } catch (e) {}
+  }
+
   async function showOffline(id, btn) {
     if (!("caches" in window) || !window.isSecureContext) { btn.style.display = "none"; return; }
     const kept = await isKept(id).catch(() => false);

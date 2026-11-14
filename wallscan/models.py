@@ -77,9 +77,22 @@ class WallSubmission(models.Model):
         return f"{self.name or self.wall_id} @ {self.venue} [{self.status}]"
 
     def visible_to(self, user):
+        """May this user see the wall in a list (with its review status)?"""
         if self.status == APPROVED:
             return True
         return bool(user and user.is_authenticated and (user.is_staff or self.uploaded_by_id == user.id))
+
+    def openable_by(self, user):
+        """May this user open the wall (routes, AR, wall page, offline download)?
+        Approved: everyone. Pending: the uploader and admins. Rejected: admins only
+        (the uploader still sees it listed as rejected, with the admin's note)."""
+        if self.status == APPROVED:
+            return True
+        if not (user and user.is_authenticated):
+            return False
+        if user.is_staff:
+            return True
+        return self.status == PENDING and self.uploaded_by_id == user.id
 
 
 class RouteReview(models.Model):
@@ -121,3 +134,28 @@ class RouteWallLink(models.Model):
 
     def __str__(self):
         return f"{self.route} -> {self.wall.wall_id}/{self.wall_route_id}"
+
+
+class PasswordResetRequest(models.Model):
+    """A climber asked for a password reset. GoClimb has no email service, so an
+    administrator handles it in the Review queue: sets a new password, or dismisses it.
+    One open request per climber; asking again just updates it."""
+
+    PASSWORD_SET, DISMISSED = "password_set", "dismissed"
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="password_reset_requests", on_delete=models.CASCADE)
+    email = models.EmailField()
+    times_requested = models.PositiveIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_requested_at = models.DateTimeField(default=timezone.now)
+    done = models.BooleanField(default=False)
+    outcome = models.CharField(max_length=20, blank=True)
+    handled_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, related_name="+",
+                                   on_delete=models.SET_NULL)
+    handled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-last_requested_at"]
+
+    def __str__(self):
+        return f"Password reset for {self.user} ({'done' if self.done else 'open'})"

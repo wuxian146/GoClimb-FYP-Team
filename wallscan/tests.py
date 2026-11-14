@@ -321,3 +321,189 @@ class RestoreAfterWipedDiskTests(IsolatedEngine, TestCase):
         out = StringIO()
         call_command("restore_walls", stdout=out)
         self.assertIn("Engine has 1 wall(s)", out.getvalue())
+
+
+class RejectedWallTests(IsolatedEngine, TestCase):
+    """Option B: a rejected wall is listed (with its status and note) for its uploader, but only admins can open it."""
+
+    def setUp(self):
+        super().setUp()
+        self.owner = climber("owner")
+        self.other = climber("other")
+        self.admin = climber("admin", staff=True)
+        self.wall = make_wall([("R1", APPROVED, "5A", "boulder", []), ("R2", APPROVED, "6A", "boulder", [])],
+                              status="rejected", uploader=self.owner)
+        self.wall.review_note = "Photo too dark"
+        self.wall.save()
+
+    def get(self, user, url):
+        self.client.force_login(user)
+        return self.client.get(url)
+
+    def test_nobody_but_admins_can_open_it(self):
+        wid = self.wall.wall_id
+        for user in (self.owner, self.other):
+            self.assertEqual(self.get(user, f"/ar/api/walls/{wid}/unity").status_code, 404, user.username)
+            self.assertEqual(self.get(user, f"/ar/walls/{wid}/routes/").status_code, 404, user.username)
+            self.assertEqual(self.get(user, f"/ar/wall/{wid}/").status_code, 404, user.username)
+        doc = self.get(self.admin, f"/ar/api/walls/{wid}/unity").json()
+        self.assertEqual({r["id"] for r in doc["routes"]}, {"R1", "R2"})
+        self.assertEqual(self.get(self.admin, f"/ar/wall/{wid}/").status_code, 200)
+
+    def test_uploader_still_sees_it_listed_as_rejected_with_the_note(self):
+        from .records import filter_wall_list
+        mine = filter_wall_list(self.owner, [{"wall_id": self.wall.wall_id}])
+        self.assertEqual(len(mine), 1)
+        self.assertEqual((mine[0]["review_status"], mine[0]["openable"], mine[0]["review_note"]), ("rejected", False, "Photo too dark"))
+        self.assertEqual(filter_wall_list(self.other, [{"wall_id": self.wall.wall_id}]), [])
+        self.assertTrue(filter_wall_list(self.admin, [{"wall_id": self.wall.wall_id}])[0]["openable"])
+        # thumbnail for the uploader's list card still loads; other users get nothing
+        self.assertEqual(self.get(self.owner, f"/ar/photo/{self.wall.wall_id}").status_code, 200)
+        self.assertEqual(self.get(self.other, f"/ar/photo/{self.wall.wall_id}").status_code, 404)
+
+    def test_recognising_a_rejected_wall_by_scanning_reveals_no_routes(self):
+        from .records import doc_for
+        doc = doc_for(self.other, self.wall, dict(self.wall.doc))
+        self.assertEqual(doc["routes"], [])
+        self.assertTrue(doc["unavailable"])
+        self.assertEqual(doc_for(self.owner, self.wall, dict(self.wall.doc))["routes"], [])
+        self.assertEqual(len(doc_for(self.admin, self.wall, dict(self.wall.doc))["routes"]), 2)
+
+    def test_pending_wall_still_opens_for_its_uploader(self):
+        pending = make_wall([("R1", APPROVED, "5A", "boulder", [])], status=PENDING, uploader=self.owner)
+        self.assertEqual(self.get(self.owner, f"/ar/api/walls/{pending.wall_id}/unity").status_code, 200)
+        self.assertEqual(self.get(self.other, f"/ar/api/walls/{pending.wall_id}/unity").status_code, 404)
+
+
+class DeleteWallTests(IsolatedEngine, TestCase):
+    """Admins delete a wall everywhere (engine files + database), so it can never come back."""
+
+    def setUp(self):
+        super().setUp()
+        import cv2
+        import numpy as np
+        img = np.full((300, 400, 3), 200, np.uint8)
+        cv2.circle(img, (120, 120), 25, (30, 30, 200), -1)
+        photo = cv2.imencode(".jpg", img)[1].tobytes()
+        self.wid = str(uuid.uuid4())
+        doc = {"wall_id": self.wid, "name": "To delete", "venue": "Gym", "mode": "indoor",
+               "holds": [{"id": f"H{i}", "x": 0.1 * i, "y": 0.5, "status": "detected"} for i in range(1, 5)],
+               "routes": [{"id": "R1", "hold_ids": ["H1", "H2", "H3"], "points": []}]}
+        self.sub = WallSubmission.objects.create(wall_id=self.wid, name="To delete", venue="Gym", mode="indoor",
+                                                 status=APPROVED, doc=doc, photo=photo)
+        RouteReview.objects.create(wall=self.sub, route_id="R1", status=APPROVED, grade="5A")
+        self.admin = User.objects.create_user("admin", password="pw-12345678", is_staff=True, is_superuser=True)
+        self.user = User.objects.create_user("climber", password="pw-12345678")
+        from wallscan.views import _engine
+        self.engine = _engine()                                  # restores the wall into the engine
+        self.assertIn(self.wid, [w["wall_id"] for w in self.engine.store.search_walls(limit=100)])
+
+    def engine_has_it(self):
+        return self.wid in [w["wall_id"] for w in self.engine.store.search_walls(limit=100)]
+
+    def test_admin_delete_removes_record_and_engine_files(self):
+        self.client.force_login(self.admin)
+        r = self.client.delete(f"/ar/api/walls/{self.wid}?confirm=1")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(WallSubmission.objects.filter(wall_id=self.wid).exists())
+        self.assertFalse(RouteReview.objects.filter(route_id="R1", wall_id=self.sub.pk).exists())
+        self.assertFalse(self.engine_has_it())
+        self.client.get("/ar/review/")                           # the Review page must not bring it back
+        self.assertFalse(WallSubmission.objects.filter(wall_id=self.wid).exists())
+
+    def test_delete_still_works_when_engine_files_are_already_gone(self):
+        self.engine.store.delete_wall(self.wid, confirm=True)   # e.g. hosting disk wiped
+        self.engine.restored_from_db = True                      # and not restored yet
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.delete(f"/ar/api/walls/{self.wid}?confirm=1").status_code, 200)
+        self.assertFalse(WallSubmission.objects.filter(wall_id=self.wid).exists())
+
+    def test_non_admin_cannot_delete(self):
+        self.client.force_login(self.user)
+        self.assertIn(self.client.delete(f"/ar/api/walls/{self.wid}?confirm=1").status_code, (401, 403))
+        self.assertTrue(WallSubmission.objects.filter(wall_id=self.wid).exists())
+        self.assertTrue(self.engine_has_it())
+
+    def test_django_admin_delete_also_removes_engine_files(self):
+        from django.contrib import admin as dj_admin
+        from wallscan.admin import WallSubmissionAdmin
+        WallSubmissionAdmin(WallSubmission, dj_admin.site).delete_model(None, self.sub)
+        self.assertFalse(WallSubmission.objects.filter(wall_id=self.wid).exists())
+        self.assertFalse(self.engine_has_it())
+        self.client.force_login(self.admin)
+        self.client.get("/ar/review/")                           # would re-import it if the files were left
+        self.assertFalse(WallSubmission.objects.filter(wall_id=self.wid).exists())
+
+
+class PasswordResetRequestTests(TestCase):
+    """#6: the reset page records a request; an administrator sets a new password in the Review queue."""
+
+    NEW_PASSWORD = "Climb-Again-2026"
+
+    def setUp(self):
+        self.climber = User.objects.create_user("forgetful", email="Forget@Example.com", password="old-password-123")
+        self.admin = User.objects.create_user("boss", password="admin-pass-123", is_staff=True)
+
+    def ask(self, email):
+        return self.client.post("/api/auth/password-reset/", {"email": email}, content_type="application/json")
+
+    def act(self, user, action, password=""):
+        from .models import PasswordResetRequest
+        req = PasswordResetRequest.objects.get(user=self.climber)
+        self.client.force_login(user)
+        return self.client.post(f"/ar/review/password-resets/{req.pk}/", {"action": action, "password": password},
+                                content_type="application/json")
+
+    def test_request_is_recorded_once_and_repeats_are_merged(self):
+        from .models import PasswordResetRequest
+        first, second = self.ask("forget@example.com"), self.ask("forget@example.com")
+        self.assertEqual((first.status_code, second.status_code), (200, 200))
+        reqs = PasswordResetRequest.objects.filter(user=self.climber, done=False)
+        self.assertEqual(reqs.count(), 1)
+        self.assertEqual(reqs.get().times_requested, 2)
+
+    def test_unknown_or_inactive_email_records_nothing_and_looks_the_same(self):
+        from .models import PasswordResetRequest
+        User.objects.create_user("gone", email="gone@example.com", password="x-password-123", is_active=False)
+        known, unknown, inactive = self.ask("forget@example.com"), self.ask("nobody@example.com"), self.ask("gone@example.com")
+        self.assertEqual(known.json(), unknown.json())
+        self.assertEqual(known.json(), inactive.json())
+        self.assertEqual(PasswordResetRequest.objects.count(), 1)
+
+    def test_admin_sees_the_request_and_the_badge_counts_it(self):
+        self.ask("forget@example.com")
+        self.client.force_login(self.admin)
+        page = self.client.get("/ar/review/")
+        self.assertContains(page, "Password reset requests")
+        self.assertContains(page, "forgetful")
+        self.assertGreaterEqual(page.context["review_pending"], 1)
+
+    def test_admin_sets_a_new_password_and_the_climber_can_log_in(self):
+        from .models import PasswordResetRequest
+        self.ask("forget@example.com")
+        r = self.act(self.admin, "set_password", self.NEW_PASSWORD)
+        self.assertEqual(r.status_code, 200, r.content)
+        self.client.logout()
+        self.assertTrue(self.client.login(username="forgetful", password=self.NEW_PASSWORD))
+        req = PasswordResetRequest.objects.get(user=self.climber)
+        self.assertEqual((req.done, req.outcome, req.handled_by), (True, PasswordResetRequest.PASSWORD_SET, self.admin))
+
+    def test_weak_password_is_refused_and_the_request_stays_open(self):
+        from .models import PasswordResetRequest
+        self.ask("forget@example.com")
+        self.assertEqual(self.act(self.admin, "set_password", "12345678").status_code, 400)
+        self.assertFalse(PasswordResetRequest.objects.get(user=self.climber).done)
+
+    def test_dismiss_keeps_the_old_password(self):
+        from .models import PasswordResetRequest
+        self.ask("forget@example.com")
+        self.assertEqual(self.act(self.admin, "dismiss").status_code, 200)
+        self.assertEqual(PasswordResetRequest.objects.get(user=self.climber).outcome, PasswordResetRequest.DISMISSED)
+        self.client.logout()
+        self.assertTrue(self.client.login(username="forgetful", password="old-password-123"))
+
+    def test_only_administrators_can_handle_requests(self):
+        from .models import PasswordResetRequest
+        self.ask("forget@example.com")
+        self.assertEqual(self.act(self.climber, "set_password", self.NEW_PASSWORD).status_code, 403)
+        self.assertFalse(PasswordResetRequest.objects.get(user=self.climber).done)

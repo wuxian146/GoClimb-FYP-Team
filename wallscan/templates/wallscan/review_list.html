@@ -48,6 +48,29 @@
     </div>
   </div>
 
+  {% if resets %}
+  <div class="rv-card">
+    <h3 style="margin:0 0 6px;color:#0f172a"><i class="fas fa-key"></i> Password reset requests ({{ resets|length }})</h3>
+    <p class="rv-small" style="margin:0 0 10px">Check that the request really comes from the climber (for example, ask them to contact you from their registered email) before setting a new password. Give the new password to them privately.</p>
+    {% for r in resets %}
+    <div class="rv-place" data-reset="{{ r.id }}">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <b style="color:#0f172a">{{ r.user.username }}</b><span class="rv-badge pending" data-badge>Open</span>
+      </div>
+      <div class="rv-small">{{ r.email }} · requested {{ r.last_requested_at|date:"d M Y H:i" }}{% if r.times_requested > 1 %} · asked {{ r.times_requested }} times{% endif %}</div>
+      <div class="rv-row">
+        <input class="rv-in" data-pw type="text" autocomplete="off" placeholder="New password (at least 8 characters)">
+      </div>
+      <div class="rv-row">
+        <button class="rv-btn green" data-reset-action="set_password"><i class="fas fa-key"></i> Set new password</button>
+        <button class="rv-btn ghost" data-reset-action="dismiss">Dismiss</button>
+      </div>
+      <div class="rv-small" data-msg></div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   <div class="rv-card">
     <h3 style="margin:0 0 10px;color:#0f172a"><i class="fas fa-map-marked-alt"></i> New places from community posts ({{ places|length }})</h3>
     {% for p in places %}
@@ -107,6 +130,28 @@
 <script>
 (function () {
   const csrf = () => { const m = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/); return m ? decodeURIComponent(m[1]) : ""; };
+  document.querySelectorAll("[data-reset]").forEach((card) => {
+    card.querySelectorAll("[data-reset-action]").forEach((b) => b.onclick = async () => {
+      const msg = card.querySelector("[data-msg]");
+      const action = b.dataset.resetAction;
+      if (action === "dismiss" && !confirm("Dismiss this request without changing the password?")) return;
+      b.disabled = true;
+      try {
+        const r = await fetch(`/ar/review/password-resets/${card.dataset.reset}/`, {
+          method: "POST", credentials: "same-origin",
+          headers: { "Content-Type": "application/json", "X-CSRFToken": csrf() },
+          body: JSON.stringify({ action, password: card.querySelector("[data-pw]").value }) });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || "Failed");
+        const badge = card.querySelector("[data-badge]");
+        badge.className = "rv-badge " + (action === "dismiss" ? "rejected" : "approved");
+        badge.textContent = action === "dismiss" ? "Dismissed" : "Password set";
+        card.querySelectorAll("button, input").forEach((el) => el.disabled = true);
+        msg.textContent = d.message;
+      } catch (e) { b.disabled = false; msg.textContent = e.message; }
+    });
+  });
+
   document.querySelectorAll("[data-place]").forEach((card) => {
     card.querySelectorAll("[data-decide]").forEach((b) => b.onclick = async () => {
       const msg = card.querySelector("[data-msg]");

@@ -104,3 +104,22 @@ class ClimberJourneyTests(TestCase):
     def test_removed_legacy_ar_assets_are_not_routable(self):
         response = self.client.get('/ar-assets/HIRO.jpg')
         self.assertEqual(response.status_code, 404)
+
+
+class DashboardClimbsTests(TestCase):
+    """#33: the dashboard lists the climber's upcoming and past scheduled climbs."""
+
+    def test_dashboard_shows_upcoming_and_past_climbs(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from .models import ClimbSchedule, Crag
+        user = User.objects.create_user("dash-climber", password="safe-password-9")
+        crag = Crag.objects.create(name="Dashboard Test Crag", slug="dashboard-test-crag", lat=1.35, lng=103.8)
+        ClimbSchedule.objects.create(user=user, crag=crag, climb_at=timezone.now() + timedelta(days=2), friends="Sam")
+        ClimbSchedule.objects.create(user=user, crag=crag, climb_at=timezone.now() - timedelta(days=5), notes="Sent the slab")
+        self.client.force_login(user)
+        page = self.client.get("/dashboard/").content.decode()
+        self.assertIn("Your Climbs", page)
+        self.assertIn("Upcoming", page)
+        self.assertIn("with Sam", page)
+        self.assertIn("Sent the slab", page)

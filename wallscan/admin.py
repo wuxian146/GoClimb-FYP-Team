@@ -18,6 +18,25 @@ class WallSubmissionAdmin(admin.ModelAdmin):
     readonly_fields = ("wall_id", "hold_count", "route_count", "created_at", "updated_at")
     inlines = [RouteReviewInline]
 
+    # Also remove the route engine's files, or the Review page would re-import the wall as a new record.
+    @staticmethod
+    def _delete_engine_files(wall_ids):
+        from .views import _engine
+        engine = _engine()
+        for wid in wall_ids:
+            try:
+                engine.store.delete_wall(wid, confirm=True)
+            except Exception:
+                pass                                   # already gone
+
+    def delete_model(self, request, obj):
+        self._delete_engine_files([obj.wall_id])
+        super().delete_model(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        self._delete_engine_files(list(queryset.values_list("wall_id", flat=True)))
+        super().delete_queryset(request, queryset)
+
 
 @admin.register(ArAppToken)
 class ArAppTokenAdmin(admin.ModelAdmin):

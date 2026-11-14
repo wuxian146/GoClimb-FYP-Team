@@ -68,6 +68,10 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
   const sameOrigin = url.origin === self.location.origin;
 
+  // Video/audio are fetched in pieces ("Range" requests, answered with 206). Browsers can't store
+  // partial responses offline, so let these go straight to the network, untouched.
+  if (req.headers.has("range")) return;
+
   if (req.method !== "GET") {
     if (sameOrigin && AUTH_CHANGES.some((re) => re.test(url.pathname))) {
       event.respondWith(fetch(req).then((res) => {
@@ -108,7 +112,7 @@ async function forgetUser() {
 function storable(res) {
   if (!res) return false;
   if (res.type === "opaque") return true;     // cross-origin <link>/<img> loads
-  return res.ok && !res.redirected;
+  return res.status === 200 && !res.redirected;   // only complete responses (never 206 partial content)
 }
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
@@ -156,9 +160,11 @@ async function cacheFirst(req, cacheName, maxEntries) {
   if (hit) return hit;
   const res = await fetch(req);
   if (storable(res)) {
-    const cache = await caches.open(cacheName);
-    await cache.put(req, res.clone());
-    if (maxEntries) trim(cache, maxEntries);
+    try {                                      // saving for offline must never break the response itself
+      const cache = await caches.open(cacheName);
+      await cache.put(req, res.clone());
+      if (maxEntries) trim(cache, maxEntries);
+    } catch (err) {}
   }
   return res;
 }

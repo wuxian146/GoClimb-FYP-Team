@@ -14,6 +14,7 @@ urlpatterns = [
     path("review/locations/", views.locations_list, name="locations"),
     path("review/locations/new/", views.location_edit, name="add_location"),
     path("review/locations/<int:pk>/", views.location_edit, name="location_edit"),
+    path("review/password-resets/<int:pk>/", views.password_reset_action, name="password_reset_action"),
     path("review/<str:wall_id>/", views.review_wall, name="review_wall"),
     path("review/<str:wall_id>/decision/", views.review_wall_decision, name="review_wall_decision"),
     path("review/<str:wall_id>/routes/<str:route_id>/decision/", views.review_route_decision,
